@@ -1,0 +1,176 @@
+; === 基础设置 ===
+InpPresetName=金貔貅-EURUSD
+InpMagicNumber=26042702||0||0||0
+InpMagicNumber,F=0
+InpLicenseKey=
+; === 时间与交易时段（北京时间） ===
+InpChinaUtcOffsetHours=8||0||0||0
+InpChinaUtcOffsetHours,F=0
+InpAutoServerUtcOffset=true||0||0||0
+InpAutoServerUtcOffset,F=0
+InpServerUtcOffsetHours=2||0||0||0
+InpServerUtcOffsetHours,F=0
+InpUseManualNewsBlock=false||0||0||0
+InpUseManualNewsBlock,F=0
+InpNewsBlockStartHour=20||0||0||0
+InpNewsBlockStartHour,F=0
+InpNewsBlockEndHour=23||0||0||0
+InpNewsBlockEndHour,F=0
+; === 全局风控 ===
+InpMaxDailyLossPercent=8.0||0||0||0
+InpMaxDailyLossPercent,F=0
+InpMaxSpreadPoints=25||0||0||0
+InpMaxSpreadPoints,F=0
+InpUseFixedLot=false||0||0||0
+InpUseFixedLot,F=0
+InpFixedLot=0.01||0||0||0
+InpFixedLot,F=0
+; === 马丁加仓 ===
+InpMartBaseLot=0.01||0||0||0
+InpMartBaseLot,F=0
+InpMartLotMultiplier=1.2||0||0||0
+InpMartLotMultiplier,F=0
+InpMartMaxLayerLot=1.5||0||0||0
+InpMartMaxLayerLot,F=0
+InpMartMaxLayers=50||0||0||0
+InpMartMaxLayers,F=0
+InpMartBaseSpacingPts=1500||0||0||0
+InpMartBaseSpacingPts,F=0
+InpMartIncSpacingPts=300||0||0||0
+InpMartIncSpacingPts,F=0
+InpMartMaxTotalLots=2.0||0||0||0
+InpMartMaxTotalLots,F=0
+; === 止盈止损 ===
+InpMartBasketTP_USD=8.0||0||0||0
+InpMartBasketTP_USD,F=0
+InpMartBasketTPPerLayer=8.0||0||0||0
+InpMartBasketTPPerLayer,F=0
+InpMartHardSL_USD=0.0||0||0||0
+InpMartHardSL_USD,F=0
+InpMartTrailPct=50.0||0||0||0
+InpMartTrailPct,F=0
+InpMartTrailMinProfitPerLayer=60.0||0||0||0
+InpMartTrailMinProfitPerLayer,F=0
+InpMartCooldownSec=45||0||0||0
+InpMartCooldownSec,F=0
+; === 入场信号 ===
+InpMartEntryTF=5||0||0||0
+InpMartEntryTF,F=0
+InpMartEmaFastPeriod=8||0||0||0
+InpMartEmaFastPeriod,F=0
+InpMartEmaSlowPeriod=21||0||0||0
+InpMartEmaSlowPeriod,F=0
+InpMartUseH4Filter=true||0||0||0
+InpMartUseH4Filter,F=0
+InpMartStartHour=0||0||0||0
+InpMartStartHour,F=0
+InpMartEndHour=0||0||0||0
+InpMartEndHour,F=0
+; ============================== SMC智能资金入场 ==============================
+InpEntryMode=2||0||0||0
+InpEntryMode,F=0
+InpSMCScoreThreshold=30||0||0||0
+InpSMCScoreThreshold,F=0
+; --- 大周期方向(4H) ---
+InpSMC_Imbalance=true||0||0||0
+InpSMC_Imbalance,F=0
+InpSMC_ImbalanceLookback=25||0||0||0
+InpSMC_ImbalanceLookback,F=0
+InpSMC_ImbalanceRatio=1.2||0||0||0
+InpSMC_ImbalanceRatio,F=0
+InpSMC_SupplyDemand=true||0||0||0
+InpSMC_SupplyDemand,F=0
+InpSMC_SDZoneLookback=60||0||0||0
+InpSMC_SDZoneLookback,F=0
+InpSMC_SDImpulseATR=1.5||0||0||0
+InpSMC_SDImpulseATR,F=0
+; --- 中周期入场(1H) ---
+InpSMC_OrderBlock=true||0||0||0
+InpSMC_OrderBlock,F=0
+InpSMC_OBLookback=40||0||0||0
+InpSMC_OBLookback,F=0
+InpSMC_OBImpulseATR=1.2||0||0||0
+InpSMC_OBImpulseATR,F=0
+InpSMC_FVG=true||0||0||0
+InpSMC_FVG,F=0
+InpSMC_FVGLookback=25||0||0||0
+InpSMC_FVGLookback,F=0
+; --- 小周期精确(15M) ---
+InpSMC_LiquidityVoid=true||0||0||0
+InpSMC_LiquidityVoid,F=0
+InpSMC_LVLookback=35||0||0||0
+InpSMC_LVLookback,F=0
+InpSMC_LVMinBodyATR=1.5||0||0||0
+InpSMC_LVMinBodyATR,F=0
+InpSMC_Breaker=true||0||0||0
+InpSMC_Breaker,F=0
+InpSMC_BreakerLookback=50||0||0||0
+InpSMC_BreakerLookback,F=0
+; --- CCI 动量过滤(可选) ---
+InpSMC_UseCCI=true||0||0||0
+InpSMC_UseCCI,F=0
+InpSMC_CCI_TF=16385||0||0||0
+InpSMC_CCI_TF,F=0
+InpSMC_CCIPeriod=14||0||0||0
+InpSMC_CCIPeriod,F=0
+InpSMC_CCIExtreme=150||0||0||0
+InpSMC_CCIExtreme,F=0
+; --- H4 EMA周期 ---
+InpMartH4EmaPeriod=50||0||0||0
+InpMartH4EmaPeriod,F=0
+; --- 综合评分权重 ---
+InpSMCWeightImbalance=15||0||0||0
+InpSMCWeightImbalance,F=0
+InpSMCWeightSD=15||0||0||0
+InpSMCWeightSD,F=0
+InpSMCWeightOB=13||0||0||0
+InpSMCWeightOB,F=0
+InpSMCWeightFVG=12||0||0||0
+InpSMCWeightFVG,F=0
+InpSMCWeightLV=8||0||0||0
+InpSMCWeightLV,F=0
+InpSMCWeightBreaker=7||0||0||0
+InpSMCWeightBreaker,F=0
+InpSMCWeightEMA=30||0||0||0
+InpSMCWeightEMA,F=0
+; === 高级风控（默认关闭） ===
+InpEnableFastLoss=false||0||0||0
+InpEnableFastLoss,F=0
+InpFastLossDistance=800||0||0||0
+InpFastLossDistance,F=0
+InpFastLossTime=300||0||0||0
+InpFastLossTime,F=0
+InpFastLossRecoveryDistance=400||0||0||0
+InpFastLossRecoveryDistance,F=0
+InpEnableHedge=false||0||0||0
+InpEnableHedge,F=0
+InpHedgeTriggerMode=0||0||0||0
+InpHedgeTriggerMode,F=0
+InpHedgeLossPercent=40.0||0||0||0
+InpHedgeLossPercent,F=0
+InpHedgeAbsoluteUSD=200.0||0||0||0
+InpHedgeAbsoluteUSD,F=0
+InpHedgeRatio=0.5||0||0||0
+InpHedgeRatio,F=0
+InpHedgeReleaseMode=0||0||0||0
+InpHedgeReleaseMode,F=0
+InpHedgeReleaseFixed=200.0||0||0||0
+InpHedgeReleaseFixed,F=0
+InpHedgeReleaseDynPerLayer=5.0||0||0||0
+InpHedgeReleaseDynPerLayer,F=0
+; === 状态面板 ===
+InpShowStatusPanel=true||0||0||0
+InpShowStatusPanel,F=0
+InpPanelX=5||0||0||0
+InpPanelX,F=0
+InpPanelY=5||0||0||0
+InpPanelY,F=0
+InpPanelWidth=680||0||0||0
+InpPanelWidth,F=0
+InpPanelHeight=380||0||0||0
+InpPanelHeight,F=0
+InpPanelRefreshSec=2||0||0||0
+InpPanelRefreshSec,F=0
+; === 历史交易明细 ===
+InpHistoryDays=15||0||0||0
+InpHistoryDays,F=0
