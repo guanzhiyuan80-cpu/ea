@@ -1,3 +1,6 @@
+; === 金貔貅-EURUSD 回测调试参数 ===
+; 目标: 确保开单 + 最大化盈利因子
+; 关键修改: EMA_ONLY模式, 关闭CCI否决, 放宽点差, 关闭日亏损锁, 全天交易, 关闭H4过滤
 ; === 基础设置 ===
 InpPresetName=金貔貅-EURUSD
 InpMagicNumber=26042702||0||0||0
@@ -17,9 +20,9 @@ InpNewsBlockStartHour,F=0
 InpNewsBlockEndHour=23||0||0||0
 InpNewsBlockEndHour,F=0
 ; === 全局风控 ===
-InpMaxDailyLossPercent=8.0||0||0||0
+InpMaxDailyLossPercent=0.0||0||0||0
 InpMaxDailyLossPercent,F=0
-InpMaxSpreadPoints=60||0||0||0
+InpMaxSpreadPoints=200||0||0||0
 InpMaxSpreadPoints,F=0
 InpUseFixedLot=false||0||0||0
 InpUseFixedLot,F=0
@@ -28,7 +31,7 @@ InpFixedLot,F=0
 ; === 马丁加仓 ===
 InpMartBaseLot=0.01||0||0||0
 InpMartBaseLot,F=0
-InpMartLotMultiplier=1.2||0||0||0
+InpMartLotMultiplier=1.15||0||0||0
 InpMartLotMultiplier,F=0
 InpMartMaxLayerLot=1.5||0||0||0
 InpMartMaxLayerLot,F=0
@@ -41,9 +44,9 @@ InpMartIncSpacingPts,F=0
 InpMartMaxTotalLots=2.0||0||0||0
 InpMartMaxTotalLots,F=0
 ; === 止盈止损 ===
-InpMartBasketTP_USD=8.0||0||0||0
+InpMartBasketTP_USD=10.0||0||0||0
 InpMartBasketTP_USD,F=0
-InpMartBasketTPPerLayer=8.0||0||0||0
+InpMartBasketTPPerLayer=10.0||0||0||0
 InpMartBasketTPPerLayer,F=0
 InpMartHardSL_USD=0.0||0||0||0
 InpMartHardSL_USD,F=0
@@ -51,7 +54,7 @@ InpMartTrailPct=50.0||0||0||0
 InpMartTrailPct,F=0
 InpMartTrailMinProfitPerLayer=60.0||0||0||0
 InpMartTrailMinProfitPerLayer,F=0
-InpMartCooldownSec=45||0||0||0
+InpMartCooldownSec=30||0||0||0
 InpMartCooldownSec,F=0
 ; === 入场信号 ===
 InpMartEntryTF=5||0||0||0
@@ -67,9 +70,9 @@ InpMartStartHour,F=0
 InpMartEndHour=0||0||0||0
 InpMartEndHour,F=0
 ; ============================== SMC智能资金入场 ==============================
-InpEntryMode=2||0||0||0
+InpEntryMode=0||0||0||0
 InpEntryMode,F=0
-InpSMCScoreThreshold=15||0||0||0
+InpSMCScoreThreshold=5||0||0||0
 InpSMCScoreThreshold,F=0
 ; --- 大周期方向(4H) ---
 InpSMC_Imbalance=true||0||0||0
@@ -107,7 +110,7 @@ InpSMC_Breaker,F=0
 InpSMC_BreakerLookback=35||0||0||0
 InpSMC_BreakerLookback,F=0
 ; --- CCI 动量过滤(可选) ---
-InpSMC_UseCCI=true||0||0||0
+InpSMC_UseCCI=false||0||0||0
 InpSMC_UseCCI,F=0
 InpSMC_CCI_TF=16385||0||0||0
 InpSMC_CCI_TF,F=0
