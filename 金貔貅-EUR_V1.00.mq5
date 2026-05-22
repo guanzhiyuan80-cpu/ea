@@ -2220,3 +2220,1323 @@ double GetMartSpacingPts()
   }
 
 // ===== 面板UI系统 =====
+
+void ResolvePanelLayout()
+  {
+   long chartW = 0, chartH = 0;
+   ChartGetInteger(0, CHART_WIDTH_IN_PIXELS, 0, chartW);
+   ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0, chartH);
+
+   int desiredW = MathMax(400, InpPanelWidth);
+   int desiredH = MathMax(360, InpPanelHeight);
+   g_panelW = desiredW;
+   g_panelH = desiredH;
+
+   if(chartW > 0)
+     {
+      int maxW = (int)MathMax(400, chartW - 8);
+      g_panelW = (int)MathMin(g_panelW, maxW);
+     }
+   if(chartH > 0)
+     {
+      int maxH = (int)MathMax(360, chartH - 8);
+      g_panelH = (int)MathMin(g_panelH, maxH);
+     }
+
+   g_panelX = MathMax(4, InpPanelX);
+   g_panelY = MathMax(4, InpPanelY);
+   if(chartW > 0 && g_panelX + g_panelW + 4 > chartW)
+      g_panelX = (int)MathMax(4, chartW - g_panelW - 4);
+   if(chartH > 0 && g_panelY + g_panelH + 4 > chartH)
+      g_panelY = (int)MathMax(4, chartH - g_panelH - 4);
+  }
+
+//--- Load BMP data into g_bgSrcPixels[] (24/32-bit uncompressed, from embedded resource)
+bool LoadBgBmpFile(const uchar &buf[], int bufSize)
+  {
+   if(bufSize < 54) { PrintFormat("[BG] BMP buf too small: %d", bufSize); return false; }
+   if(buf[0] != 'B' || buf[1] != 'M') { Print("[BG] Invalid BMP header"); return false; }
+   int dataOff = buf[10] | (buf[11]<<8) | (buf[12]<<16) | (buf[13]<<24);
+   g_bgSrcW = buf[18] | (buf[19]<<8) | (buf[20]<<16) | (buf[21]<<24);
+   g_bgSrcH = buf[22] | (buf[23]<<8) | (buf[24]<<16) | (buf[25]<<24);
+   int bpp = buf[28] | (buf[29]<<8);
+   PrintFormat("[BG] BMP: %dx%d, bpp=%d, dataOff=%d, bufSize=%d", g_bgSrcW, g_bgSrcH, bpp, dataOff, bufSize);
+   if(bpp != 24 && bpp != 32) { PrintFormat("[BG] Unsupported bpp: %d", bpp); return false; }
+   if(g_bgSrcW <= 0 || g_bgSrcH <= 0) { Print("[BG] Invalid dimensions"); return false; }
+   int rowBytes = ((bpp * g_bgSrcW + 31) / 32) * 4;
+   int pxSize = bpp / 8;
+   ArrayResize(g_bgSrcPixels, g_bgSrcW * g_bgSrcH);
+   for(int y = 0; y < g_bgSrcH; y++)
+     {
+      int dstY = g_bgSrcH - 1 - y;
+      int rowBase = dataOff + y * rowBytes;
+      for(int x = 0; x < g_bgSrcW; x++)
+        {
+         int p = rowBase + x * pxSize;
+         if(p + 2 >= bufSize) break;
+         uchar b2 = buf[p], g2 = buf[p+1], r2 = buf[p+2];
+         g_bgSrcPixels[dstY * g_bgSrcW + x] = (uint)(0xFF000000 | (r2<<16) | (g2<<8) | b2);
+        }
+     }
+   return true;
+  }
+
+//--- Load BMP data into g_logoSrcPixels[] (24/32-bit uncompressed, from embedded resource)
+bool LoadLogoBmpFile(const uchar &buf[], int bufSize)
+  {
+   if(bufSize < 54) { PrintFormat("[LOGO] BMP buf too small: %d", bufSize); return false; }
+   if(buf[0] != 'B' || buf[1] != 'M') { Print("[LOGO] Invalid BMP header"); return false; }
+   int dataOff = buf[10] | (buf[11]<<8) | (buf[12]<<16) | (buf[13]<<24);
+   g_logoSrcW = buf[18] | (buf[19]<<8) | (buf[20]<<16) | (buf[21]<<24);
+   g_logoSrcH = buf[22] | (buf[23]<<8) | (buf[24]<<16) | (buf[25]<<24);
+   int bpp = buf[28] | (buf[29]<<8);
+   PrintFormat("[LOGO] BMP: %dx%d, bpp=%d, dataOff=%d, bufSize=%d", g_logoSrcW, g_logoSrcH, bpp, dataOff, bufSize);
+   if(bpp != 24 && bpp != 32) { PrintFormat("[LOGO] Unsupported bpp: %d", bpp); return false; }
+   if(g_logoSrcW <= 0 || g_logoSrcH <= 0) { Print("[LOGO] Invalid dimensions"); return false; }
+   int rowBytes = ((bpp * g_logoSrcW + 31) / 32) * 4;
+   int pxSize = bpp / 8;
+   ArrayResize(g_logoSrcPixels, g_logoSrcW * g_logoSrcH);
+   for(int y = 0; y < g_logoSrcH; y++)
+     {
+      int dstY = g_logoSrcH - 1 - y;
+      int rowBase = dataOff + y * rowBytes;
+      for(int x = 0; x < g_logoSrcW; x++)
+        {
+         int p = rowBase + x * pxSize;
+         if(p + 2 >= bufSize) break;
+         uchar b2 = buf[p], g2 = buf[p+1], r2 = buf[p+2];
+         g_logoSrcPixels[dstY * g_logoSrcW + x] = (uint)(0xFF000000 | (r2<<16) | (g2<<8) | b2);
+        }
+     }
+   return true;
+  }
+
+//--- Scale logo pixels to targetW x targetH (fit-inside, keep aspect ratio)
+bool UpdateLogoResource(int targetW, int targetH)
+  {
+   if(g_logoSrcW == 0 || g_logoSrcH == 0) return false;
+
+   uint scaled[];
+   ArrayResize(scaled, targetW * targetH);
+
+   double scaleX = (double)targetW / g_logoSrcW;
+   double scaleY = (double)targetH / g_logoSrcH;
+   double scale  = MathMin(scaleX, scaleY);
+   int drawW = (int)(g_logoSrcW * scale);
+   int drawH = (int)(g_logoSrcH * scale);
+   int offsetX = (targetW - drawW) / 2;
+   int offsetY = (targetH - drawH) / 2;
+
+   uint bgColor = 0xFF141A25;
+   ArrayInitialize(scaled, bgColor);
+
+   for(int y = 0; y < drawH; y++)
+     {
+      double srcYf = y * ((double)g_logoSrcH / drawH);
+      int srcY0 = (int)MathFloor(srcYf);
+      int srcY1 = MathMin(srcY0 + 1, g_logoSrcH - 1);
+      double fy = srcYf - srcY0;
+      for(int x = 0; x < drawW; x++)
+        {
+         double srcXf = x * ((double)g_logoSrcW / drawW);
+         int srcX0 = (int)MathFloor(srcXf);
+         int srcX1 = MathMin(srcX0 + 1, g_logoSrcW - 1);
+         double fx = srcXf - srcX0;
+         uint c00 = g_logoSrcPixels[srcY0 * g_logoSrcW + srcX0];
+         uint c10 = g_logoSrcPixels[srcY0 * g_logoSrcW + srcX1];
+         uint c01 = g_logoSrcPixels[srcY1 * g_logoSrcW + srcX0];
+         uint c11 = g_logoSrcPixels[srcY1 * g_logoSrcW + srcX1];
+         uchar rr = (uchar)(((c00>>16&0xFF)*(1-fx)+(c10>>16&0xFF)*fx)*(1-fy)+((c01>>16&0xFF)*(1-fx)+(c11>>16&0xFF)*fx)*fy);
+         uchar gg = (uchar)(((c00>>8&0xFF)*(1-fx)+(c10>>8&0xFF)*fx)*(1-fy)+((c01>>8&0xFF)*(1-fx)+(c11>>8&0xFF)*fx)*fy);
+         uchar bb = (uchar)(((c00&0xFF)*(1-fx)+(c10&0xFF)*fx)*(1-fy)+((c01&0xFF)*(1-fx)+(c11&0xFF)*fx)*fy);
+         scaled[(y + offsetY) * targetW + (x + offsetX)] = (uint)(0xFF000000 | (rr << 16) | (gg << 8) | bb);
+        }
+     }
+
+   if(!ResourceCreate(LOGO_RES, scaled, (uint)targetW, (uint)targetH,
+                      0, 0, (uint)targetW, COLOR_FORMAT_XRGB_NOALPHA))
+     {
+      PrintFormat("[LOGO] ResourceCreate FAILED: %dx%d, err=%d", targetW, targetH, GetLastError());
+      return false;
+     }
+   PrintFormat("[LOGO] ResourceCreate OK: %dx%d", targetW, targetH);
+   return true;
+  }
+
+//--- Scale BG pixels to targetW x targetH using cover mode (keep ratio, crop)
+bool UpdateBgResource(int targetW, int targetH)
+  {
+   if(g_bgSrcW == 0 || g_bgSrcH == 0) return false;
+   if(targetW <= 0 || targetH <= 0)   return false;
+
+   uint scaled[];
+   ArrayResize(scaled, targetW * targetH);
+
+   double scaleX = (double)targetW / g_bgSrcW;
+   double scaleY = (double)targetH / g_bgSrcH;
+   double scale  = MathMax(scaleX, scaleY);
+
+   int srcDrawW = (int)(targetW / scale);
+   int srcDrawH = (int)(targetH / scale);
+   int srcOffX  = (g_bgSrcW - srcDrawW) / 2;
+   int srcOffY  = (g_bgSrcH - srcDrawH) / 2;
+
+   for(int y = 0; y < targetH; y++)
+     {
+      double srcYf = srcOffY + y * ((double)srcDrawH / targetH);
+      int srcY0 = (int)MathFloor(srcYf);
+      srcY0 = MathMax(0, MathMin(srcY0, g_bgSrcH - 1));
+      int srcY1 = MathMin(srcY0 + 1, g_bgSrcH - 1);
+      double fy = srcYf - (int)MathFloor(srcYf);
+      for(int x = 0; x < targetW; x++)
+        {
+         double srcXf = srcOffX + x * ((double)srcDrawW / targetW);
+         int srcX0 = (int)MathFloor(srcXf);
+         srcX0 = MathMax(0, MathMin(srcX0, g_bgSrcW - 1));
+         int srcX1 = MathMin(srcX0 + 1, g_bgSrcW - 1);
+         double fx = srcXf - (int)MathFloor(srcXf);
+
+         uint c00 = g_bgSrcPixels[srcY0 * g_bgSrcW + srcX0];
+         uint c10 = g_bgSrcPixels[srcY0 * g_bgSrcW + srcX1];
+         uint c01 = g_bgSrcPixels[srcY1 * g_bgSrcW + srcX0];
+         uint c11 = g_bgSrcPixels[srcY1 * g_bgSrcW + srcX1];
+         uchar rr = (uchar)(((c00>>16&0xFF)*(1-fx)+(c10>>16&0xFF)*fx)*(1-fy)+((c01>>16&0xFF)*(1-fx)+(c11>>16&0xFF)*fx)*fy);
+         uchar gg = (uchar)(((c00>>8&0xFF)*(1-fx)+(c10>>8&0xFF)*fx)*(1-fy)+((c01>>8&0xFF)*(1-fx)+(c11>>8&0xFF)*fx)*fy);
+         uchar bb = (uchar)(((c00&0xFF)*(1-fx)+(c10&0xFF)*fx)*(1-fy)+((c01&0xFF)*(1-fx)+(c11&0xFF)*fx)*fy);
+         scaled[y * targetW + x] = (uint)(0xFF000000 | (rr << 16) | (gg << 8) | bb);
+        }
+     }
+
+   if(!ResourceCreate(BG_RES, scaled, (uint)targetW, (uint)targetH,
+                      0, 0, (uint)targetW, COLOR_FORMAT_XRGB_NOALPHA))
+     {
+      PrintFormat("[BG] ResourceCreate FAILED: %dx%d, err=%d", targetW, targetH, GetLastError());
+      return false;
+     }
+   PrintFormat("[BG] ResourceCreate OK: %dx%d", targetW, targetH);
+   return true;
+  }
+
+void CreateCardObj(string bgName, string titleName, string valueName, string subName,
+                   int x, int y, int w, int h)
+  {
+   if(ObjectFind(0, bgName) < 0)
+      ObjectCreate(0, bgName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, bgName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, bgName, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, bgName, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, bgName, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, bgName, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, bgName, OBJPROP_COLOR, C'55,65,85');
+   ObjectSetInteger(0, bgName, OBJPROP_BGCOLOR, C'35,43,60');
+   ObjectSetInteger(0, bgName, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, bgName, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, bgName, OBJPROP_BACK, false);
+   ObjectSetInteger(0, bgName, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, bgName, OBJPROP_HIDDEN, true);
+
+   if(ObjectFind(0, titleName) < 0)
+      ObjectCreate(0, titleName, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, titleName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, titleName, OBJPROP_XDISTANCE, x + 8);
+   ObjectSetInteger(0, titleName, OBJPROP_YDISTANCE, y + 4);
+   ObjectSetInteger(0, titleName, OBJPROP_COLOR, C'140,155,180');
+   ObjectSetInteger(0, titleName, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, titleName, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, titleName, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, titleName, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, titleName, OBJPROP_TEXT, "");
+
+   if(ObjectFind(0, valueName) < 0)
+      ObjectCreate(0, valueName, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, valueName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, valueName, OBJPROP_XDISTANCE, x + 8);
+   ObjectSetInteger(0, valueName, OBJPROP_YDISTANCE, y + 20);
+   ObjectSetInteger(0, valueName, OBJPROP_COLOR, C'224,231,255');
+   ObjectSetInteger(0, valueName, OBJPROP_FONTSIZE, 13);
+   ObjectSetString(0, valueName, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, valueName, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, valueName, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, valueName, OBJPROP_TEXT, "");
+
+   if(ObjectFind(0, subName) < 0)
+      ObjectCreate(0, subName, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, subName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, subName, OBJPROP_XDISTANCE, x + 8);
+   ObjectSetInteger(0, subName, OBJPROP_YDISTANCE, y + 42);
+   ObjectSetInteger(0, subName, OBJPROP_COLOR, C'140,155,180');
+   ObjectSetInteger(0, subName, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, subName, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, subName, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, subName, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, subName, OBJPROP_TEXT, "");
+  }
+
+void CreateSmcCard(string bgName, string titleName, string line1Name, string line2Name, string subName,
+                   int x, int y, int w, int h)
+  {
+   if(ObjectFind(0, bgName) < 0)
+      ObjectCreate(0, bgName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, bgName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, bgName, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, bgName, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, bgName, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, bgName, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, bgName, OBJPROP_COLOR, C'55,65,85');
+   ObjectSetInteger(0, bgName, OBJPROP_BGCOLOR, C'35,43,60');
+   ObjectSetInteger(0, bgName, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, bgName, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, bgName, OBJPROP_BACK, false);
+   ObjectSetInteger(0, bgName, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, bgName, OBJPROP_HIDDEN, true);
+
+   if(ObjectFind(0, titleName) < 0)
+      ObjectCreate(0, titleName, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, titleName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, titleName, OBJPROP_XDISTANCE, x + 6);
+   ObjectSetInteger(0, titleName, OBJPROP_YDISTANCE, y + 3);
+   ObjectSetInteger(0, titleName, OBJPROP_COLOR, C'140,155,180');
+   ObjectSetInteger(0, titleName, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, titleName, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, titleName, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, titleName, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, titleName, OBJPROP_TEXT, "");
+
+   if(ObjectFind(0, line1Name) < 0)
+      ObjectCreate(0, line1Name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, line1Name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, line1Name, OBJPROP_XDISTANCE, x + 6);
+   ObjectSetInteger(0, line1Name, OBJPROP_YDISTANCE, y + 18);
+   ObjectSetInteger(0, line1Name, OBJPROP_COLOR, C'90,100,120');
+   ObjectSetInteger(0, line1Name, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, line1Name, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, line1Name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, line1Name, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, line1Name, OBJPROP_TEXT, "");
+
+   if(ObjectFind(0, line2Name) < 0)
+      ObjectCreate(0, line2Name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, line2Name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, line2Name, OBJPROP_XDISTANCE, x + 6);
+   ObjectSetInteger(0, line2Name, OBJPROP_YDISTANCE, y + 33);
+   ObjectSetInteger(0, line2Name, OBJPROP_COLOR, C'90,100,120');
+   ObjectSetInteger(0, line2Name, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, line2Name, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, line2Name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, line2Name, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, line2Name, OBJPROP_TEXT, "");
+
+   if(ObjectFind(0, subName) < 0)
+      ObjectCreate(0, subName, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, subName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, subName, OBJPROP_XDISTANCE, x + 6);
+   ObjectSetInteger(0, subName, OBJPROP_YDISTANCE, y + 48);
+   ObjectSetInteger(0, subName, OBJPROP_COLOR, C'224,231,255');
+   ObjectSetInteger(0, subName, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, subName, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, subName, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, subName, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, subName, OBJPROP_TEXT, "");
+  }
+
+void CreateStatusPanel()
+  {
+   if(g_isTester) return;
+   if(!InpShowStatusPanel)
+      return;
+
+   for(int i = 5; i < 10; i++)
+     {
+      string oldLine = "HYB_LINE" + IntegerToString(i);
+      if(ObjectFind(0, oldLine) >= 0)
+         ObjectDelete(0, oldLine);
+     }
+
+   ResolvePanelLayout();
+
+   // --- Chart background ---
+   if(g_bgSrcW == 0)
+      LoadBgBmpFile(g_bgRawData, ArraySize(g_bgRawData));
+   long chartW = 0, chartH = 0;
+   ChartGetInteger(0, CHART_WIDTH_IN_PIXELS, 0, chartW);
+   ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0, chartH);
+   if(g_bgSrcW > 0 && UpdateBgResource((int)chartW, (int)chartH))
+     {
+      if(ObjectFind(0, OBJ_CHART_BG) < 0)
+         ObjectCreate(0, OBJ_CHART_BG, OBJ_BITMAP_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, OBJ_CHART_BG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, OBJ_CHART_BG, OBJPROP_XDISTANCE, 0);
+      ObjectSetInteger(0, OBJ_CHART_BG, OBJPROP_YDISTANCE, 0);
+      ObjectSetString(0, OBJ_CHART_BG, OBJPROP_BMPFILE, 0, BG_RES);
+      ObjectSetString(0, OBJ_CHART_BG, OBJPROP_BMPFILE, 1, BG_RES);
+      ObjectSetInteger(0, OBJ_CHART_BG, OBJPROP_STATE, false);
+      ObjectSetInteger(0, OBJ_CHART_BG, OBJPROP_BACK, true);
+      ObjectSetInteger(0, OBJ_CHART_BG, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, OBJ_CHART_BG, OBJPROP_HIDDEN, true);
+     }
+
+   // --- Panel background ---
+   if(ObjectFind(0, OBJ_BG) >= 0 && ObjectGetInteger(0, OBJ_BG, OBJPROP_TYPE) != OBJ_RECTANGLE_LABEL)
+      ObjectDelete(0, OBJ_BG);
+   if(ObjectFind(0, OBJ_BG) < 0)
+      ObjectCreate(0, OBJ_BG, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_XDISTANCE, g_panelX);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_YDISTANCE, g_panelY);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_XSIZE, g_panelW);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_YSIZE, g_panelH);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_COLOR, C'73,80,101');
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_BGCOLOR, C'20,26,37');
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_BACK, false);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_BG, OBJPROP_HIDDEN, true);
+
+   // --- Top bar ---
+   int contentW = g_panelW - 120;
+   if(ObjectFind(0, OBJ_TOPBAR) < 0)
+      ObjectCreate(0, OBJ_TOPBAR, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_XDISTANCE, g_panelX + 8);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_YDISTANCE, g_panelY + 1);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_XSIZE, contentW - 16);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_YSIZE, 82);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_COLOR, C'45,55,75');
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_BGCOLOR, C'45,55,75');
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_ZORDER, 1);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_BACK, false);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_HIDDEN, true);
+
+   // --- Logo Frame ---
+   if(ObjectFind(0, OBJ_LOGO_FRAME) < 0)
+      ObjectCreate(0, OBJ_LOGO_FRAME, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_XDISTANCE, g_panelX + 16);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_YDISTANCE, g_panelY + 10);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_XSIZE, 64);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_YSIZE, 64);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_COLOR, C'80,90,110');
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_BGCOLOR, clrBlack);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_BACK, false);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, OBJ_LOGO_FRAME, OBJPROP_ZORDER, 1);
+
+   // --- Logo ---
+   if(g_logoSrcW == 0)
+      LoadLogoBmpFile(g_logoRawData, ArraySize(g_logoRawData));
+   bool logoBmpOk = (g_logoSrcW > 0 && UpdateLogoResource(60, 60));
+   PrintFormat("[LOGO] srcW=%d srcH=%d bmpOk=%d", g_logoSrcW, g_logoSrcH, (int)logoBmpOk);
+   if(logoBmpOk)
+     {
+      if(ObjectFind(0, OBJ_LOGO) < 0)
+         ObjectCreate(0, OBJ_LOGO, OBJ_BITMAP_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, OBJ_LOGO, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, OBJ_LOGO, OBJPROP_XDISTANCE, g_panelX + 18);
+      ObjectSetInteger(0, OBJ_LOGO, OBJPROP_YDISTANCE, g_panelY + 12);
+      ObjectSetString(0, OBJ_LOGO, OBJPROP_BMPFILE, 0, LOGO_RES);
+      ObjectSetString(0, OBJ_LOGO, OBJPROP_BMPFILE, 1, LOGO_RES);
+      ObjectSetInteger(0, OBJ_LOGO, OBJPROP_STATE, false);
+      ObjectSetInteger(0, OBJ_LOGO, OBJPROP_ZORDER, 2);
+      ObjectSetInteger(0, OBJ_LOGO, OBJPROP_BACK, false);
+      ObjectSetInteger(0, OBJ_LOGO, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, OBJ_LOGO, OBJPROP_HIDDEN, true);
+     }
+
+   // --- Header text ---
+   if(ObjectFind(0, OBJ_HEADER) < 0)
+      ObjectCreate(0, OBJ_HEADER, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_HEADER, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_HEADER, OBJPROP_XDISTANCE, g_panelX + 88);
+   ObjectSetInteger(0, OBJ_HEADER, OBJPROP_YDISTANCE, g_panelY + 18);
+   ObjectSetInteger(0, OBJ_HEADER, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, OBJ_HEADER, OBJPROP_FONTSIZE, 15);
+   ObjectSetString(0, OBJ_HEADER, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, OBJ_HEADER, OBJPROP_ZORDER, 3);
+   ObjectSetInteger(0, OBJ_HEADER, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_HEADER, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "金貔貅-EUR v1.00");
+
+   // --- Sub-header ---
+   if(ObjectFind(0, OBJ_SUBHDR) < 0)
+      ObjectCreate(0, OBJ_SUBHDR, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_SUBHDR, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_SUBHDR, OBJPROP_XDISTANCE, g_panelX + 88);
+   ObjectSetInteger(0, OBJ_SUBHDR, OBJPROP_YDISTANCE, g_panelY + 48);
+   ObjectSetInteger(0, OBJ_SUBHDR, OBJPROP_COLOR, C'224,231,255');
+   ObjectSetInteger(0, OBJ_SUBHDR, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, OBJ_SUBHDR, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, OBJ_SUBHDR, OBJPROP_ZORDER, 3);
+   ObjectSetInteger(0, OBJ_SUBHDR, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_SUBHDR, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, OBJ_SUBHDR, OBJPROP_TEXT, "EURUSDc | 美分账户 | 网格策略");
+
+   // --- 3 Stat Cards ---
+   int cardY = g_panelY + 90;
+   int cardH = 60;
+   int cardGap = 6;
+   int cardW = (contentW - 16 - cardGap * 2) / 3;
+   int cardX1 = g_panelX + 8;
+   int cardX2 = cardX1 + cardW + cardGap;
+   int cardX3 = cardX2 + cardW + cardGap;
+
+   CreateCardObj(OBJ_CARD1_BG, OBJ_CARD1_T, OBJ_CARD1_V, OBJ_CARD1_S, cardX1, cardY, cardW, cardH);
+   CreateCardObj(OBJ_CARD2_BG, OBJ_CARD2_T, OBJ_CARD2_V, OBJ_CARD2_S, cardX2, cardY, cardW, cardH);
+   CreateCardObj(OBJ_CARD3_BG, OBJ_CARD3_T, OBJ_CARD3_V, OBJ_CARD3_S, cardX3, cardY, cardW, cardH);
+
+   // --- 指标卡片区（替换SMC区域） ---
+   int smcY = g_panelY + 158;
+   int smcCardH = 65;
+   int smcX1 = cardX1;
+   int smcX2 = cardX2;
+   int smcX3 = cardX3;
+
+   // 卡片1: 趋势过滤 (ADX + H4 EMA)
+   CreateSmcCard(OBJ_SMC_BG1, OBJ_SMC_T1, OBJ_SMC_D1A, OBJ_SMC_D1B, OBJ_SMC_D1S, smcX1, smcY, cardW, smcCardH);
+   // 卡片2: 均值回归 (RSI + BB)
+   CreateSmcCard(OBJ_SMC_BG2, OBJ_SMC_T2, OBJ_SMC_D2A, OBJ_SMC_D2B, OBJ_SMC_D2S, smcX2, smcY, cardW, smcCardH);
+   // 卡片3: 动量确认 (Stochastic)
+   CreateSmcCard(OBJ_SMC_BG3, OBJ_SMC_T3, OBJ_SMC_D3A, OBJ_SMC_D3B, OBJ_SMC_D3S, smcX3, smcY, cardW, smcCardH);
+
+   // 综合评分行
+   int totalY = smcY + smcCardH + 3;
+   if(ObjectFind(0, OBJ_SMC_TOTAL) < 0)
+      ObjectCreate(0, OBJ_SMC_TOTAL, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_XDISTANCE, g_panelX + 10);
+   ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_YDISTANCE, totalY);
+   ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_COLOR, C'140,155,180');
+   ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, OBJ_SMC_TOTAL, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, OBJ_SMC_TOTAL, OBJPROP_TEXT, "");
+
+   // --- Info Lines ---
+   int lineY = g_panelY + 250;
+   int lineGap = 20;
+   string lineObjs[] = {OBJ_LINE0, OBJ_LINE1, OBJ_LINE2};
+   for(int i = 0; i < 3; ++i)
+     {
+      if(ObjectFind(0, lineObjs[i]) < 0)
+         ObjectCreate(0, lineObjs[i], OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, lineObjs[i], OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, lineObjs[i], OBJPROP_XDISTANCE, g_panelX + 10);
+      ObjectSetInteger(0, lineObjs[i], OBJPROP_YDISTANCE, lineY + i * lineGap);
+      ObjectSetInteger(0, lineObjs[i], OBJPROP_COLOR, C'224,231,255');
+      ObjectSetInteger(0, lineObjs[i], OBJPROP_FONTSIZE, 9);
+      ObjectSetString(0, lineObjs[i], OBJPROP_FONT, "Microsoft YaHei UI");
+      ObjectSetString(0, lineObjs[i], OBJPROP_TEXT, "");
+      ObjectSetInteger(0, lineObjs[i], OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, lineObjs[i], OBJPROP_HIDDEN, true);
+     }
+
+   // LINE4 — 止盈止损参数行
+   if(ObjectFind(0, OBJ_LINE4) < 0)
+      ObjectCreate(0, OBJ_LINE4, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_LINE4, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_LINE4, OBJPROP_XDISTANCE, g_panelX + 10);
+   ObjectSetInteger(0, OBJ_LINE4, OBJPROP_YDISTANCE, lineY + 3 * lineGap);
+   ObjectSetString(0, OBJ_LINE4, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, OBJ_LINE4, OBJPROP_FONTSIZE, 9);
+   ObjectSetInteger(0, OBJ_LINE4, OBJPROP_COLOR, C'140,155,180');
+   ObjectSetString(0, OBJ_LINE4, OBJPROP_TEXT, "");
+   ObjectSetInteger(0, OBJ_LINE4, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_LINE4, OBJPROP_HIDDEN, true);
+
+   // LINE5 — 对冲信息行
+   if(ObjectFind(0, OBJ_LINE5) < 0)
+      ObjectCreate(0, OBJ_LINE5, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_LINE5, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_LINE5, OBJPROP_XDISTANCE, g_panelX + 10);
+   ObjectSetInteger(0, OBJ_LINE5, OBJPROP_YDISTANCE, lineY + 4 * lineGap);
+   ObjectSetString(0, OBJ_LINE5, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, OBJ_LINE5, OBJPROP_FONTSIZE, 9);
+   ObjectSetInteger(0, OBJ_LINE5, OBJPROP_COLOR, C'140,155,180');
+   ObjectSetString(0, OBJ_LINE5, OBJPROP_TEXT, "");
+   ObjectSetInteger(0, OBJ_LINE5, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_LINE5, OBJPROP_HIDDEN, true);
+
+   // LINE3 — 不建仓原因行
+   if(ObjectFind(0, OBJ_LINE3) < 0)
+      ObjectCreate(0, OBJ_LINE3, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_XDISTANCE, g_panelX + 10);
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_YDISTANCE, -9999);
+   ObjectSetString(0, OBJ_LINE3, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_FONTSIZE, 9);
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_COLOR, C'255,200,60');
+   ObjectSetString(0, OBJ_LINE3, OBJPROP_TEXT, "");
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_HIDDEN, true);
+
+   // --- Button area background ---
+   int btnAreaX = g_panelX + g_panelW - 116;
+   if(ObjectFind(0, OBJ_BTN_BG) < 0)
+      ObjectCreate(0, OBJ_BTN_BG, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_XDISTANCE, btnAreaX);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_YDISTANCE, g_panelY + 1);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_XSIZE, 115);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_YSIZE, g_panelH - 2);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_COLOR, C'40,48,65');
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_BGCOLOR, C'28,34,48');
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_BACK, false);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_BTN_BG, OBJPROP_HIDDEN, true);
+
+   // --- 6 Buttons ---
+   int btnW = 100;
+   int btnH = 42;
+   int btnGap = 4;
+   int btnX = g_panelX + g_panelW - 108;
+   string btnNames[] = {OBJ_BTN1, OBJ_BTN2, OBJ_BTN3, OBJ_BTN4, OBJ_BTN5, OBJ_BTN6};
+   string btnTexts[] = {"平多单", "平空单", "平盈利", "平亏损", "全平仓", "暂停交易"};
+   color btnColors[] = {C'40,120,180', C'180,100,40', C'50,150,80', C'180,60,60', C'160,50,50', C'100,110,130'};
+   for(int i = 0; i < 6; ++i)
+     {
+      int btnY = g_panelY + 4 + i * (btnH + btnGap);
+      if(ObjectFind(0, btnNames[i]) < 0)
+         ObjectCreate(0, btnNames[i], OBJ_BUTTON, 0, 0, 0);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_XDISTANCE, btnX);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_YDISTANCE, btnY);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_XSIZE, btnW);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_YSIZE, btnH);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_COLOR, clrWhite);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_BGCOLOR, btnColors[i]);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_BORDER_COLOR, C'200,210,230');
+      ObjectSetInteger(0, btnNames[i], OBJPROP_FONTSIZE, 9);
+      ObjectSetString(0, btnNames[i], OBJPROP_FONT, "Microsoft YaHei UI");
+      ObjectSetString(0, btnNames[i], OBJPROP_TEXT, btnTexts[i]);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, btnNames[i], OBJPROP_HIDDEN, true);
+     }
+   if(g_manualPaused)
+      ObjectSetString(0, OBJ_BTN6, OBJPROP_TEXT, "恢复交易");
+
+   // --- 历史明细按钮 ---
+   int histBtnY = g_panelY + 4 + 6 * (btnH + btnGap);
+   if(ObjectFind(0, "HYB_BTN_HIST") < 0)
+      ObjectCreate(0, "HYB_BTN_HIST", OBJ_BUTTON, 0, 0, 0);
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_XDISTANCE, btnX);
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_YDISTANCE, histBtnY);
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_XSIZE, btnW);
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_YSIZE, btnH);
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_BGCOLOR, C'60,90,130');
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_BORDER_COLOR, C'200,210,230');
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, "HYB_BTN_HIST", OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetString(0, "HYB_BTN_HIST", OBJPROP_TEXT, "历史明细");
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, "HYB_BTN_HIST", OBJPROP_HIDDEN, true);
+
+   // --- Toggle Button ---
+   int toggleBtnY = g_panelY + 4 + 7 * (btnH + btnGap);
+   if(ObjectFind(0, OBJ_BTN_TOGGLE) < 0)
+      ObjectCreate(0, OBJ_BTN_TOGGLE, OBJ_BUTTON, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_XDISTANCE, btnX);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_YDISTANCE, toggleBtnY);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_XSIZE, btnW);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_YSIZE, btnH);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_BGCOLOR, C'70,80,100');
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_BORDER_COLOR, C'200,210,230');
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, OBJ_BTN_TOGGLE, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetString(0, OBJ_BTN_TOGGLE, OBJPROP_TEXT, "隐藏面板");
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_ZORDER, 10);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_HIDDEN, true);
+  }
+
+void SetPanelVisibility(bool visible)
+  {
+   g_panelVisible = visible;
+
+   if(!visible)
+     {
+      DestroyStatusPanel();
+      g_panelCreated = false;
+
+      if(ObjectFind(0, OBJ_BTN_TOGGLE) < 0)
+         ObjectCreate(0, OBJ_BTN_TOGGLE, OBJ_BUTTON, 0, 0, 0);
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_XDISTANCE, 4);
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_YDISTANCE, 4);
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_XSIZE, 70);
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_YSIZE, 28);
+      ObjectSetString(0, OBJ_BTN_TOGGLE, OBJPROP_TEXT, "显示面板");
+      ObjectSetString(0, OBJ_BTN_TOGGLE, OBJPROP_FONT, "Microsoft YaHei UI");
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_FONTSIZE, 9);
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_COLOR, clrWhite);
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_BGCOLOR, C'50,60,80');
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_BORDER_COLOR, C'80,90,110');
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_HIDDEN, true);
+     }
+   else
+     {
+      ObjectDelete(0, OBJ_BTN_TOGGLE);
+      g_panelCreated = false;
+     }
+
+   ChartRedraw(0);
+  }
+
+void DestroyStatusPanel()
+  {
+   ObjectDelete(0, OBJ_BTN_BG);
+   ObjectDelete(0, OBJ_LOGO_FRAME);
+   ObjectDelete(0, OBJ_LOGO);
+   ObjectDelete(0, OBJ_BG);
+   ObjectDelete(0, OBJ_TOPBAR);
+   ObjectDelete(0, OBJ_HEADER);
+   ObjectDelete(0, OBJ_SUBHDR);
+   ObjectDelete(0, OBJ_CARD1_BG); ObjectDelete(0, OBJ_CARD1_T); ObjectDelete(0, OBJ_CARD1_V); ObjectDelete(0, OBJ_CARD1_S);
+   ObjectDelete(0, OBJ_CARD2_BG); ObjectDelete(0, OBJ_CARD2_T); ObjectDelete(0, OBJ_CARD2_V); ObjectDelete(0, OBJ_CARD2_S);
+   ObjectDelete(0, OBJ_CARD3_BG); ObjectDelete(0, OBJ_CARD3_T); ObjectDelete(0, OBJ_CARD3_V); ObjectDelete(0, OBJ_CARD3_S);
+   ObjectDelete(0, OBJ_SMC_BG1); ObjectDelete(0, OBJ_SMC_BG2); ObjectDelete(0, OBJ_SMC_BG3);
+   ObjectDelete(0, OBJ_SMC_T1);  ObjectDelete(0, OBJ_SMC_T2);  ObjectDelete(0, OBJ_SMC_T3);
+   ObjectDelete(0, OBJ_SMC_D1A); ObjectDelete(0, OBJ_SMC_D1B); ObjectDelete(0, OBJ_SMC_D1S);
+   ObjectDelete(0, OBJ_SMC_D2A); ObjectDelete(0, OBJ_SMC_D2B); ObjectDelete(0, OBJ_SMC_D2S);
+   ObjectDelete(0, OBJ_SMC_D3A); ObjectDelete(0, OBJ_SMC_D3B); ObjectDelete(0, OBJ_SMC_D3S);
+   ObjectDelete(0, OBJ_SMC_TOTAL);
+   for(int i = 0; i < 10; i++)
+     {
+      string lineName = "HYB_LINE" + IntegerToString(i);
+      ObjectDelete(0, lineName);
+     }
+   ObjectDelete(0, OBJ_BTN1); ObjectDelete(0, OBJ_BTN2); ObjectDelete(0, OBJ_BTN3);
+   ObjectDelete(0, OBJ_BTN4); ObjectDelete(0, OBJ_BTN5); ObjectDelete(0, OBJ_BTN6);
+   ObjectDelete(0, "HYB_BTN_HIST");
+   ResourceFree(LOGO_RES);
+   ResourceFree(BG_RES);
+  }
+
+void UpdateStatusPanel()
+  {
+   if(g_isTester) return;
+   if(!InpShowStatusPanel)
+      return;
+   if(!g_panelVisible) return;
+
+   if(!g_panelCreated)
+     {
+      CreateStatusPanel();
+      g_panelCreated = true;
+     }
+
+   // 定期确保面板文字标签在前景层
+   static int s_frontCounter = 0;
+   if(++s_frontCounter >= 10)
+     {
+      s_frontCounter = 0;
+      int total = ObjectsTotal(0, 0, -1);
+      for(int i = total - 1; i >= 0; i--)
+        {
+         string name = ObjectName(0, i, 0, -1);
+         if(StringFind(name, "HYB_") < 0) continue;
+         ENUM_OBJECT objType = (ENUM_OBJECT)ObjectGetInteger(0, name, OBJPROP_TYPE);
+         if(objType == OBJ_LABEL || objType == OBJ_EDIT)
+           {
+            if((bool)ObjectGetInteger(0, name, OBJPROP_BACK))
+               ObjectSetInteger(0, name, OBJPROP_BACK, false);
+           }
+        }
+     }
+
+   double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+   double bal = AccountInfoDouble(ACCOUNT_BALANCE);
+   double dayDd = GetTodayMaxDrawdown();
+   double floatingPnl = GetEffectivePnL();
+
+   string acctCurrency = AccountInfoString(ACCOUNT_CURRENCY);
+   bool isCent = (StringFind(acctCurrency, "USC") >= 0 || StringFind(acctCurrency, "CEN") >= 0);
+   string acctType = isCent ? "美分账户" : "标准账户";
+
+   // 方向文本
+   string dirText = "待机";
+   if(g_martDirection == MART_DIR_BUY)       dirText = "做多";
+   else if(g_martDirection == MART_DIR_SELL)  dirText = "做空";
+
+   // 综合评分方向
+   string trendArrow = "";
+   int bestScore = MathMax(g_gridBullScore, g_gridBearScore);
+   if(g_gridBullScore > g_gridBearScore)        trendArrow = StringFormat("评分:多%d", g_gridBullScore);
+   else if(g_gridBearScore > g_gridBullScore)    trendArrow = StringFormat("评分:空%d", g_gridBearScore);
+   else                                          trendArrow = StringFormat("评分:平(%d:%d)", g_gridBullScore, g_gridBearScore);
+
+   string subHdr = StringFormat("EURUSDc | %s | 网格策略  %s  授权至:%s-%s-%s",
+      acctType, trendArrow,
+      StringSubstr(g_licenseExpiry, 0, 4), StringSubstr(g_licenseExpiry, 4, 2), StringSubstr(g_licenseExpiry, 6, 2));
+   if(g_manualPaused)
+      subHdr += " [暂停]";
+   ObjectSetString(0, OBJ_SUBHDR, OBJPROP_TEXT, subHdr);
+
+   // 顶栏颜色
+   color topColor = C'45,55,75';
+   if(g_dailyLocked || g_martHardSLLocked || g_fastLossLocked)
+      topColor = C'160,50,50';
+   else if(g_manualPaused)
+      topColor = C'140,110,40';
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_COLOR, topColor);
+   ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_BGCOLOR, topColor);
+
+   // --- Card 1: 篮子浮盈 ---
+   ObjectSetString(0, OBJ_CARD1_T, OBJPROP_TEXT, g_hedgeActive ? "总浮盈" : "篮子浮盈");
+   string pnlText = StringFormat("%+.2f", floatingPnl);
+   ObjectSetString(0, OBJ_CARD1_V, OBJPROP_TEXT, pnlText);
+   ObjectSetInteger(0, OBJ_CARD1_V, OBJPROP_COLOR, floatingPnl >= 0 ? C'80,200,120' : C'255,80,80');
+   color pnlColor = (g_dayRealizedPnl >= 0) ? C'0,200,120' : C'255,80,80';
+   ObjectSetInteger(0, OBJ_CARD1_S, OBJPROP_COLOR, pnlColor);
+   ObjectSetString(0, OBJ_CARD1_S, OBJPROP_TEXT, StringFormat("当日已平: %.2f", g_dayRealizedPnl));
+
+   // --- Card 2: 持仓手数 ---
+   ObjectSetString(0, OBJ_CARD2_T, OBJPROP_TEXT, "持仓手数");
+   ObjectSetString(0, OBJ_CARD2_V, OBJPROP_TEXT, StringFormat("%.2f手", g_martTotalLots));
+   ObjectSetString(0, OBJ_CARD2_S, OBJPROP_TEXT, StringFormat("%d/%d层", g_martLayerCount, InpMartMaxLayers));
+
+   // --- Card 3: TP进度 ---
+   double tpPct = 0.0;
+   int tpLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
+   double dynamicTPPanel = InpMartBasketTP_USD + (tpLayers - 1) * InpMartBasketTPPerLayer;
+   if(dynamicTPPanel > 0.0)
+      tpPct = MathMin(100.0, MathMax(0.0, floatingPnl / dynamicTPPanel * 100.0));
+   ObjectSetString(0, OBJ_CARD3_T, OBJPROP_TEXT, "TP进度");
+   ObjectSetString(0, OBJ_CARD3_V, OBJPROP_TEXT, StringFormat("%.1f%%", tpPct));
+   ObjectSetInteger(0, OBJ_CARD3_V, OBJPROP_COLOR, tpPct >= 75.0 ? C'80,200,120' : C'224,231,255');
+   ObjectSetString(0, OBJ_CARD3_S, OBJPROP_TEXT, StringFormat("目标:%.0f", dynamicTPPanel));
+
+   // === 指标卡片更新 ===
+
+   // --- 卡片1: 趋势过滤 (ADX + H4 EMA) ---
+   ObjectSetString(0, OBJ_SMC_T1, OBJPROP_TEXT, "趋势过滤");
+
+   // ADX值
+   double adxVal = g_sigADXVal;
+   string adxText = StringFormat("ADX: %.1f  %s", adxVal,
+      adxVal < InpADXMaxLevel ? "[弱趋势]" : "[强趋势禁单]");
+   ObjectSetString(0, OBJ_SMC_D1A, OBJPROP_TEXT, adxText);
+   ObjectSetInteger(0, OBJ_SMC_D1A, OBJPROP_COLOR, adxVal < InpADXMaxLevel ? C'80,200,120' : C'255,80,80');
+
+   // H4 EMA方向
+   double close1 = iClose(_Symbol, InpMartEntryTF, 1);
+   string emaDir = "";
+   color emaDirColor = C'90,100,120';
+   if(g_sigH4EmaVal > 0.0)
+     {
+      if(close1 > g_sigH4EmaVal)  { emaDir = "↑看多"; emaDirColor = C'80,200,120'; }
+      else                         { emaDir = "↓看空"; emaDirColor = C'255,80,80';  }
+     }
+   else emaDir = "待计算";
+   string emaText = StringFormat("H4 EMA(%d): %s", InpH4EmaPeriod, emaDir);
+   ObjectSetString(0, OBJ_SMC_D1B, OBJPROP_TEXT, emaText);
+   ObjectSetInteger(0, OBJ_SMC_D1B, OBJPROP_COLOR, emaDirColor);
+
+   // H4过滤状态小计
+   string h4FilterMode = (InpMartH4FilterMode == H4_FILTER_OFF) ? "关闭" : ((InpMartH4FilterMode == H4_FILTER_1K) ? "1K" : "2K");
+   string h4Status = (InpMartH4FilterMode == H4_FILTER_OFF) ? "已关闭" : (g_sigH4Confirmed ? "已通过" : "未通过");
+   ObjectSetString(0, OBJ_SMC_D1S, OBJPROP_TEXT, StringFormat("H4过滤(%s): %s", h4FilterMode, h4Status));
+   ObjectSetInteger(0, OBJ_SMC_D1S, OBJPROP_COLOR, (g_sigH4Confirmed || InpMartH4FilterMode == H4_FILTER_OFF) ? C'80,200,120' : C'255,200,60');
+
+   // --- 卡片2: 均值回归 (RSI + BB) ---
+   ObjectSetString(0, OBJ_SMC_T2, OBJPROP_TEXT, "均值回归");
+
+   // RSI值
+   double rsiVal = g_sigRSIVal;
+   string rsiText = StringFormat("RSI(%d): %.1f", InpRSIPeriod, rsiVal);
+   color rsiColor = C'140,155,180';
+   if(rsiVal < InpRSIOversold)       { rsiText += " [超卖]"; rsiColor = C'80,200,120'; }
+   else if(rsiVal > InpRSIOverbought) { rsiText += " [超买]"; rsiColor = C'255,80,80';  }
+   ObjectSetString(0, OBJ_SMC_D2A, OBJPROP_TEXT, rsiText);
+   ObjectSetInteger(0, OBJ_SMC_D2A, OBJPROP_COLOR, rsiColor);
+
+   // BB位置
+   double curPrice = iClose(_Symbol, InpMartEntryTF, 1);
+   string bbPos = "";
+   color bbColor = C'140,155,180';
+   double bbRange = g_sigBBUpper - g_sigBBLower;
+   if(bbRange > 0.0 && g_sigBBUpper > 0.0)
+     {
+      double bbMid = (g_sigBBUpper + g_sigBBLower) / 2.0;
+      double upperZone = g_sigBBUpper - bbRange * 0.15;
+      double lowerZone = g_sigBBLower + bbRange * 0.15;
+      if(curPrice >= upperZone)       { bbPos = "上轨附近"; bbColor = C'255,80,80';   }
+      else if(curPrice <= lowerZone)  { bbPos = "下轨附近"; bbColor = C'80,200,120';  }
+      else                            { bbPos = "中轨附近"; bbColor = C'140,155,180'; }
+     }
+   else bbPos = "待计算";
+   ObjectSetString(0, OBJ_SMC_D2B, OBJPROP_TEXT, StringFormat("BB(%d): %s", InpBBPeriod, bbPos));
+   ObjectSetInteger(0, OBJ_SMC_D2B, OBJPROP_COLOR, bbColor);
+
+   // RSI信号小计
+   string rsiSignal = (g_gridRSIResult == 1) ? "看多" : ((g_gridRSIResult == -1) ? "看空" : "无信号");
+   string bbSignal  = (g_gridBBResult == 1) ? "看多" : ((g_gridBBResult == -1) ? "看空" : "无信号");
+   ObjectSetString(0, OBJ_SMC_D2S, OBJPROP_TEXT, StringFormat("RSI:%s  BB:%s", rsiSignal, bbSignal));
+   ObjectSetInteger(0, OBJ_SMC_D2S, OBJPROP_COLOR, C'224,231,255');
+
+   // --- 卡片3: 动量确认 (Stochastic) ---
+   ObjectSetString(0, OBJ_SMC_T3, OBJPROP_TEXT, "动量确认");
+
+   // Stochastic K值
+   double stochK = g_sigStochK;
+   double stochD = 0.0;
+   if(g_hStoch != INVALID_HANDLE)
+     {
+      double dBuf[2];
+      if(CopyBuffer(g_hStoch, 1, 1, 1, dBuf) >= 1)
+         stochD = dBuf[0];
+     }
+   string stochKText = StringFormat("K(%d): %.1f", InpStochK, stochK);
+   color stochKColor = C'140,155,180';
+   if(stochK < InpStochOversold)       { stochKText += " [超卖]"; stochKColor = C'80,200,120'; }
+   else if(stochK > InpStochOverbought) { stochKText += " [超买]"; stochKColor = C'255,80,80';  }
+   ObjectSetString(0, OBJ_SMC_D3A, OBJPROP_TEXT, stochKText);
+   ObjectSetInteger(0, OBJ_SMC_D3A, OBJPROP_COLOR, stochKColor);
+
+   string stochDText = StringFormat("D(%d): %.1f", InpStochD, stochD);
+   color stochDColor = C'140,155,180';
+   if(stochD < InpStochOversold)       { stochDText += " [超卖区]"; stochDColor = C'80,200,120'; }
+   else if(stochD > InpStochOverbought) { stochDText += " [超买区]"; stochDColor = C'255,80,80';  }
+   ObjectSetString(0, OBJ_SMC_D3B, OBJPROP_TEXT, stochDText);
+   ObjectSetInteger(0, OBJ_SMC_D3B, OBJPROP_COLOR, stochDColor);
+
+   string stochSignal = (g_gridStochResult == 1) ? "看多" : ((g_gridStochResult == -1) ? "看空" : "无信号");
+   string emaSignal   = (g_gridEMAResult == 1) ? "看多" : ((g_gridEMAResult == -1) ? "看空" : "无信号");
+   ObjectSetString(0, OBJ_SMC_D3S, OBJPROP_TEXT, StringFormat("Stoch:%s  EMA:%s", stochSignal, emaSignal));
+   ObjectSetInteger(0, OBJ_SMC_D3S, OBJPROP_COLOR, C'224,231,255');
+
+   // --- 综合评分行 ---
+   {
+      int maxScore = InpWeightRSI + InpWeightBB + InpWeightStoch + InpWeightEMA;
+      string dirLabel = (g_gridBullScore >= g_gridBearScore) ? "多" : "空";
+      int topScore = MathMax(g_gridBullScore, g_gridBearScore);
+      string passMark = (topScore >= InpScoreThreshold && g_gridBullScore != g_gridBearScore) ? "✓" : "✗";
+      string distText = "";
+      double curSpacing = GetMartSpacingPts();
+      if(g_martLayerCount >= InpMartMaxLayers)
+         distText = "-";
+      else if(g_martLayerCount <= 0)
+         distText = StringFormat("%.0f点", curSpacing);
+      else if(g_sigMartDistToNext < 0)
+         distText = StringFormat("已触发[%.0f]", curSpacing);
+      else
+         distText = StringFormat("%d|%.0f", g_sigMartDistToNext, curSpacing);
+
+      string totalText = StringFormat("综合: 多:%d 空:%d [%s%d/%d 阈:%d]%s  %d/%d层 距:%s",
+         g_gridBullScore, g_gridBearScore,
+         dirLabel, topScore, maxScore, InpScoreThreshold, passMark,
+         g_martLayerCount, InpMartMaxLayers, distText);
+      ObjectSetString(0, OBJ_SMC_TOTAL, OBJPROP_TEXT, totalText);
+      ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_COLOR,
+         topScore >= InpScoreThreshold ? C'80,200,120' : C'140,155,180');
+   }
+
+   // === 信息行 ===
+   double spread = GetCurrentSpreadPoints();
+
+   // Line 0: 综合评分与马丁状态
+   {
+      string sigText = "待机";
+      if(g_sigMartEntryOk)
+        {
+         if(g_sigMartEmaDir == 1)       sigText = "做多";
+         else if(g_sigMartEmaDir == -1)  sigText = "做空";
+        }
+      string modeLabel = "";
+      if(InpEntryMode == ENTRY_RSI_BB_ONLY)   modeLabel = "RSI+BB";
+      else if(InpEntryMode == ENTRY_EMA_ONLY)  modeLabel = "仅EMA";
+      else                                     modeLabel = "综合";
+      ObjectSetString(0, OBJ_LINE0, OBJPROP_TEXT,
+         StringFormat("模式:%s  信号:%s  多:%d 空:%d  点差:%.0f  方向:%s",
+            modeLabel, sigText, g_gridBullScore, g_gridBearScore, spread, dirText));
+      color sigColor = C'140,155,180';
+      int bs = g_gridBullScore, br = g_gridBearScore;
+      if(MathMax(bs, br) >= InpScoreThreshold && bs != br) sigColor = C'80,200,120';
+      else if(bs > 0 || br > 0) sigColor = C'255,200,60';
+      ObjectSetInteger(0, OBJ_LINE0, OBJPROP_COLOR, sigColor);
+   }
+
+   // Line 1: 账户风控
+   {
+      double modulePnlNow = g_dayRealizedPnl + floatingPnl;
+      double deltaPnl = modulePnlNow - g_dayStartModulePnl;
+      double dailyLossPct = 0.0;
+      if(eq > 0.0 && deltaPnl < 0.0)
+         dailyLossPct = (-deltaPnl) / eq * 100.0;
+      string riskDaily  = g_dailyLocked     ? "锁定" : "正常";
+      string riskHardSL = g_martHardSLLocked ? "锁定" : "正常";
+      string riskFast   = g_fastLossLocked   ? "锁定" : "正常";
+      string dailyLossInfo = "";
+      if(InpMaxDailyLossPercent > 0.0)
+         dailyLossInfo = StringFormat("  日亏:%.2f%%(>%.0f%%)", dailyLossPct, InpMaxDailyLossPercent);
+      ObjectSetString(0, OBJ_LINE1, OBJPROP_TEXT,
+         StringFormat("权益:%.0f  余额:%.0f%s  日锁:%s  SL:%s  熔:%s",
+            eq, bal, dailyLossInfo, riskDaily, riskHardSL, riskFast));
+      color riskColor = C'140,155,180';
+      if(g_dailyLocked || g_martHardSLLocked || g_fastLossLocked) riskColor = C'255,80,80';
+      ObjectSetInteger(0, OBJ_LINE1, OBJPROP_COLOR, riskColor);
+   }
+
+   // Line 2: 回撤浮亏
+   {
+      double curLossPct = 0.0;
+      if(eq > 0.0 && floatingPnl < 0.0)
+        {
+         double absEquity = eq - floatingPnl;
+         if(absEquity > 0.0)
+            curLossPct = (-floatingPnl) / absEquity * 100.0;
+        }
+      string line2Text = StringFormat("最大回撤:%.2f(%.2f%%)  当前浮亏:%.2f%%",
+         dayDd, g_todayMaxDDPct, curLossPct);
+      if(InpEnableHedge && !g_hedgeActive)
+        {
+         if(InpHedgeTriggerMode == HEDGE_BY_EQUITY_PCT)
+            line2Text += StringFormat("  对冲需:%.1f%%", InpHedgeLossPercent);
+         else
+            line2Text += StringFormat("  对冲需:%.0f美分", InpHedgeAbsoluteUSD);
+        }
+      else if(g_hedgeActive)
+         line2Text += StringFormat("  对冲:%d单/%.2f手", g_hedgeCount, g_hedgeLots);
+      ObjectSetString(0, OBJ_LINE2, OBJPROP_TEXT, line2Text);
+      ObjectSetInteger(0, OBJ_LINE2, OBJPROP_COLOR, C'140,155,180');
+   }
+
+   // Line 4: 止盈止损参数
+   {
+      int dispLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
+      double dynamicTP = InpMartBasketTP_USD + (dispLayers - 1) * InpMartBasketTPPerLayer;
+      string tpText = (InpMartBasketTP_USD <= 0.0) ? "不限制" : StringFormat("%.0f美分", dynamicTP);
+      string slText = (InpMartHardSL_USD <= 0.0) ? "不限制" : StringFormat("%.0f美分", InpMartHardSL_USD);
+      double trailMinProfit = dynamicTP * InpMartTrailMinProfitPerLayer / 100.0;
+      string trailText = "";
+      if(InpMartTrailPct <= 0.0)
+         trailText = "关闭";
+      else
+         trailText = StringFormat("%.0f%% 门:%.0f(TP×%.0f%%) 峰:%.1f", InpMartTrailPct, trailMinProfit, InpMartTrailMinProfitPerLayer, g_martBasketPeakPnL);
+      ObjectSetString(0, OBJ_LINE4, OBJPROP_TEXT,
+         StringFormat("TP:%s(%d层)  SL:%s  追踪:%s", tpText, g_martLayerCount, slText, trailText));
+      ObjectSetInteger(0, OBJ_LINE4, OBJPROP_COLOR, C'140,155,180');
+   }
+
+   // Line 5: 对冲信息
+   {
+      string hedgeText = "";
+      double targetHedgeLot = NormalizeVolume(g_martTotalLots * InpHedgeRatio);
+      if(!InpEnableHedge)
+         hedgeText = StringFormat("对冲: 已关闭  比例:%.0f%%(%.2f手)  [权益%%:%.1f%%  绝对:%.0f美分]",
+            InpHedgeRatio*100, targetHedgeLot, InpHedgeLossPercent, InpHedgeAbsoluteUSD);
+      else if(g_hedgeActive)
+        {
+         double totalPnl = floatingPnl + g_hedgePnl;
+         double releaseThreshold = (InpHedgeReleaseMode == HEDGE_RELEASE_FIXED) ? InpHedgeReleaseFixed : g_martLayerCount * InpHedgeReleaseDynPerLayer;
+         hedgeText = StringFormat("对冲: 激活中  总浮盈:%.1f(止盈>%.0f)  马丁:%.1f  对冲:%.1f  单数:%d  手数:%.2f",
+            totalPnl, releaseThreshold, floatingPnl, g_hedgePnl, g_hedgeCount, g_hedgeLots);
+        }
+      else
+        {
+         if(InpHedgeTriggerMode == HEDGE_BY_EQUITY_PCT)
+            hedgeText = StringFormat("对冲: 待命  模式:权益%%  触发:浮亏超%.1f%%  比例:%.0f%%(%.2f手)  [绝对:%.0f美分]",
+               InpHedgeLossPercent, InpHedgeRatio*100, targetHedgeLot, InpHedgeAbsoluteUSD);
+         else
+            hedgeText = StringFormat("对冲: 待命  模式:绝对金额  触发:浮亏超%.0f美分  比例:%.0f%%(%.2f手)  [权益:%.1f%%]",
+               InpHedgeAbsoluteUSD, InpHedgeRatio*100, targetHedgeLot, InpHedgeLossPercent);
+        }
+      ObjectSetString(0, OBJ_LINE5, OBJPROP_TEXT, hedgeText);
+      ObjectSetInteger(0, OBJ_LINE5, OBJPROP_COLOR, g_hedgeActive ? C'255,200,60' : C'140,155,180');
+   }
+
+   // Line 3: 不建仓原因
+   int line3Y = g_panelY + 250 + 5 * 20;
+   if(g_noEntryReason != "")
+     {
+      ObjectSetString(0, OBJ_LINE3, OBJPROP_TEXT, "未建仓: " + g_noEntryReason);
+      ObjectSetInteger(0, OBJ_LINE3, OBJPROP_YDISTANCE, line3Y);
+      if(StringFind(g_noEntryReason, "锁定") >= 0 || StringFind(g_noEntryReason, "熔断") >= 0)
+         ObjectSetInteger(0, OBJ_LINE3, OBJPROP_COLOR, C'255,80,80');
+      else if(StringFind(g_noEntryReason, "暂停") >= 0 || StringFind(g_noEntryReason, "休市") >= 0)
+         ObjectSetInteger(0, OBJ_LINE3, OBJPROP_COLOR, C'255,200,60');
+      else
+         ObjectSetInteger(0, OBJ_LINE3, OBJPROP_COLOR, C'180,190,210');
+     }
+   else
+     {
+      ObjectSetString(0, OBJ_LINE3, OBJPROP_TEXT, "");
+      ObjectSetInteger(0, OBJ_LINE3, OBJPROP_YDISTANCE, -9999);
+     }
+
+   ChartRedraw(0);
+  }
+
+//===== 历史记录系统 =====
+
+void RecordTradeToHistory(double closedLots, double closedPnl)
+  {
+   if(g_isTester) return;
+
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   string today = StringFormat("%02d-%02d", dt.mon, dt.day);
+
+   LoadHistoryFromFile();
+
+   int todayIdx = -1;
+   for(int i = 0; i < g_historyCount; i++)
+     {
+      if(g_historyRecords[i].date == today)
+        {
+         todayIdx = i;
+         break;
+        }
+     }
+
+   double bal = AccountInfoDouble(ACCOUNT_BALANCE);
+
+   if(todayIdx < 0)
+     {
+      g_historyCount++;
+      ArrayResize(g_historyRecords, g_historyCount);
+      todayIdx = g_historyCount - 1;
+      g_historyRecords[todayIdx].date        = today;
+      g_historyRecords[todayIdx].totalLots   = 0;
+      g_historyRecords[todayIdx].maxLot      = 0;
+      g_historyRecords[todayIdx].tradeCount  = 0;
+      g_historyRecords[todayIdx].pnl         = 0;
+      g_historyRecords[todayIdx].maxDrawdown = 0;
+      g_historyRecords[todayIdx].maxDDPct    = 0;
+     }
+
+   g_historyRecords[todayIdx].totalLots += closedLots;
+   if(closedLots > g_historyRecords[todayIdx].maxLot)
+      g_historyRecords[todayIdx].maxLot = closedLots;
+   g_historyRecords[todayIdx].tradeCount++;
+   g_historyRecords[todayIdx].pnl += closedPnl;
+   g_historyRecords[todayIdx].balance = bal;
+
+   if(g_todayMaxDrawdown > g_historyRecords[todayIdx].maxDrawdown)
+      g_historyRecords[todayIdx].maxDrawdown = g_todayMaxDrawdown;
+   if(g_todayMaxDDPct > g_historyRecords[todayIdx].maxDDPct)
+      g_historyRecords[todayIdx].maxDDPct = g_todayMaxDDPct;
+
+   if(bal > 0)
+      g_historyRecords[todayIdx].pnlRatio = g_historyRecords[todayIdx].pnl / bal * 100.0;
+
+   while(g_historyCount > InpHistoryDays)
+     {
+      for(int i = 0; i < g_historyCount - 1; i++)
+         g_historyRecords[i] = g_historyRecords[i+1];
+      g_historyCount--;
+      ArrayResize(g_historyRecords, g_historyCount);
+     }
+
+   SaveHistoryToFile();
+  }
+
+void SaveHistoryToFile()
+  {
+   int handle = FileOpen(HISTORY_FILE_NAME, FILE_WRITE|FILE_CSV|FILE_ANSI, ',');
+   if(handle == INVALID_HANDLE) return;
+
+   FileWrite(handle, "Date", "Lots", "MaxLot", "Count", "PnL", "PnLRatio", "Balance", "MaxDD", "MaxDDPct");
+
+   for(int i = 0; i < g_historyCount; i++)
+     {
+      FileWrite(handle,
+         g_historyRecords[i].date,
+         DoubleToString(g_historyRecords[i].totalLots, 2),
+         DoubleToString(g_historyRecords[i].maxLot, 2),
+         IntegerToString(g_historyRecords[i].tradeCount),
+         DoubleToString(g_historyRecords[i].pnl, 2),
+         DoubleToString(g_historyRecords[i].pnlRatio, 2),
+         DoubleToString(g_historyRecords[i].balance, 2),
+         DoubleToString(g_historyRecords[i].maxDrawdown, 2),
+         DoubleToString(g_historyRecords[i].maxDDPct, 2));
+     }
+   FileClose(handle);
+  }
+
+void LoadHistoryFromFile()
+  {
+   if(g_isTester) return;
+
+   g_historyCount = 0;
+   ArrayResize(g_historyRecords, 0);
+
+   if(!FileIsExist(HISTORY_FILE_NAME)) return;
+
+   int handle = FileOpen(HISTORY_FILE_NAME, FILE_READ|FILE_CSV|FILE_ANSI, ',');
+   if(handle == INVALID_HANDLE) return;
+
+   // 跳过表头
+   if(!FileIsEnding(handle))
+     {
+      FileReadString(handle); FileReadString(handle); FileReadString(handle);
+      FileReadString(handle); FileReadString(handle); FileReadString(handle);
+      FileReadString(handle); FileReadString(handle); FileReadString(handle);
+     }
+
+   while(!FileIsEnding(handle))
+     {
+      string dateStr = FileReadString(handle);
+      if(dateStr == "") break;
+
+      g_historyCount++;
+      ArrayResize(g_historyRecords, g_historyCount);
+      int idx = g_historyCount - 1;
+
+      g_historyRecords[idx].date        = dateStr;
+      g_historyRecords[idx].totalLots   = StringToDouble(FileReadString(handle));
+      g_historyRecords[idx].maxLot      = StringToDouble(FileReadString(handle));
+      g_historyRecords[idx].tradeCount  = (int)StringToInteger(FileReadString(handle));
+      g_historyRecords[idx].pnl         = StringToDouble(FileReadString(handle));
+      g_historyRecords[idx].pnlRatio    = StringToDouble(FileReadString(handle));
+      g_historyRecords[idx].balance     = StringToDouble(FileReadString(handle));
+      g_historyRecords[idx].maxDrawdown = StringToDouble(FileReadString(handle));
+      g_historyRecords[idx].maxDDPct    = StringToDouble(FileReadString(handle));
+     }
+   FileClose(handle);
+
+   while(g_historyCount > InpHistoryDays)
+     {
+      for(int i = 0; i < g_historyCount - 1; i++)
+         g_historyRecords[i] = g_historyRecords[i+1];
+      g_historyCount--;
+     }
+   ArrayResize(g_historyRecords, g_historyCount);
+  }
+
+void CreateHistLabel(string name, int x, int y, string text, color clr, int fontSize)
+  {
+   if(ObjectFind(0, name) < 0)
+      ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+  }
+
+void CreateHistoryPanel()
+  {
+   if(g_isTester) return;
+   if(!g_historyPanelVisible) return;
+
+   ObjectsDeleteAll(0, "HYB_HIST_");
+
+   int panelWidth  = 750;
+   int rowHeight   = 20;
+   int headerHeight = 25;
+   int rows        = g_historyCount + 3;
+   int panelHeight = rows * rowHeight + 10;
+
+   int margin = 10;
+   int startY = 10;
+   int chartW = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   int startX = chartW - panelWidth - margin;
+   if(startX < 0) startX = 0;
+
+   string bgName = "HYB_HIST_BG";
+   if(ObjectFind(0, bgName) >= 0)
+      ObjectDelete(0, bgName);
+   ObjectCreate(0, bgName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, bgName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, bgName, OBJPROP_XDISTANCE, startX);
+   ObjectSetInteger(0, bgName, OBJPROP_YDISTANCE, startY);
+   ObjectSetInteger(0, bgName, OBJPROP_XSIZE, panelWidth);
+   ObjectSetInteger(0, bgName, OBJPROP_YSIZE, panelHeight);
+   ObjectSetInteger(0, bgName, OBJPROP_COLOR, C'73,80,101');
+   ObjectSetInteger(0, bgName, OBJPROP_BGCOLOR, C'20,26,37');
+   ObjectSetInteger(0, bgName, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, bgName, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, bgName, OBJPROP_BACK, false);
+   ObjectSetInteger(0, bgName, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, bgName, OBJPROP_HIDDEN, true);
+
+   int y = startY + 5;
+
+   CreateHistLabel("HYB_HIST_TITLE", panelWidth - 20, y, "EUR网格 历史交易明细", C'200,210,230', 10);
+   CreateHistLabel("HYB_HIST_CLOSE", 25, y, "X", C'255,160,60', 10);
+   y += headerHeight;
+
+   string headers[] = {"日期", "手数", "最大手", "次数", "盈亏", "盈亏比", "余额", "最大浮亏", "最大浮亏比"};
+   int colX[] = {panelWidth-20, panelWidth-80, panelWidth-140, panelWidth-200, panelWidth-255,
+                 panelWidth-330, panelWidth-410, panelWidth-490, panelWidth-580};
+
+   for(int c = 0; c < 9; c++)
+     {
+      string name = "HYB_HIST_HDR_" + IntegerToString(c);
+      CreateHistLabel(name, colX[c], y, headers[c], C'140,155,180', 9);
+     }
+   y += rowHeight;
+
+   for(int i = g_historyCount - 1; i >= 0; i--)
+     {
+      string rowPrefix = "HYB_HIST_R" + IntegerToString(g_historyCount - 1 - i) + "_";
+      color pnlClr = (g_historyRecords[i].pnl >= 0) ? C'80,200,120' : C'255,80,80';
+      color ddClr  = C'255,80,80';
+
+      CreateHistLabel(rowPrefix + "0", colX[0], y, g_historyRecords[i].date, C'200,210,230', 9);
+      CreateHistLabel(rowPrefix + "1", colX[1], y, DoubleToString(g_historyRecords[i].totalLots, 2), C'200,210,230', 9);
+      CreateHistLabel(rowPrefix + "2", colX[2], y, DoubleToString(g_historyRecords[i].maxLot, 2), C'200,210,230', 9);
+      CreateHistLabel(rowPrefix + "3", colX[3], y, IntegerToString(g_historyRecords[i].tradeCount), C'200,210,230', 9);
+      CreateHistLabel(rowPrefix + "4", colX[4], y, StringFormat("%+.2f", g_historyRecords[i].pnl), pnlClr, 9);
+      CreateHistLabel(rowPrefix + "5", colX[5], y, DoubleToString(g_historyRecords[i].pnlRatio, 2) + "%", pnlClr, 9);
+      CreateHistLabel(rowPrefix + "6", colX[6], y, DoubleToString(g_historyRecords[i].balance, 2), C'200,210,230', 9);
+      CreateHistLabel(rowPrefix + "7", colX[7], y, StringFormat("-%.2f", g_historyRecords[i].maxDrawdown), ddClr, 9);
+      CreateHistLabel(rowPrefix + "8", colX[8], y, DoubleToString(g_historyRecords[i].maxDDPct, 2) + "%", ddClr, 9);
+      y += rowHeight;
+     }
+
+   // 汇总行
+   double sumLots = 0, sumPnl = 0;
+   int sumCount = 0;
+   for(int i = 0; i < g_historyCount; i++)
+     {
+      sumLots  += g_historyRecords[i].totalLots;
+      sumCount += g_historyRecords[i].tradeCount;
+      sumPnl   += g_historyRecords[i].pnl;
+     }
+   double latestBal  = (g_historyCount > 0) ? g_historyRecords[g_historyCount-1].balance : AccountInfoDouble(ACCOUNT_BALANCE);
+   double sumRatio   = (latestBal > 0) ? sumPnl / latestBal * 100.0 : 0.0;
+   color sumPnlColor = (sumPnl >= 0) ? C'80,200,120' : C'255,80,80';
+
+   CreateHistLabel("HYB_HIST_SUM_0", colX[0], y, "汇总", C'255,200,60', 9);
+   CreateHistLabel("HYB_HIST_SUM_1", colX[1], y, DoubleToString(sumLots, 2), C'255,200,60', 9);
+   CreateHistLabel("HYB_HIST_SUM_2", colX[2], y, "-", C'140,155,180', 9);
+   CreateHistLabel("HYB_HIST_SUM_3", colX[3], y, IntegerToString(sumCount), C'255,200,60', 9);
+   CreateHistLabel("HYB_HIST_SUM_4", colX[4], y, StringFormat("%+.2f", sumPnl), sumPnlColor, 9);
+   CreateHistLabel("HYB_HIST_SUM_5", colX[5], y, DoubleToString(sumRatio, 2) + "%", sumPnlColor, 9);
+   CreateHistLabel("HYB_HIST_SUM_6", colX[6], y, DoubleToString(latestBal, 2), C'255,200,60', 9);
+   CreateHistLabel("HYB_HIST_SUM_7", colX[7], y, "-", C'140,155,180', 9);
+   CreateHistLabel("HYB_HIST_SUM_8", colX[8], y, "-", C'140,155,180', 9);
+
+   ChartRedraw(0);
+  }
+
+void DestroyHistoryPanel()
+  {
+   ObjectsDeleteAll(0, "HYB_HIST_");
+   ChartRedraw(0);
+  }
+
+void UpdateHistoryPanel()
+  {
+   if(g_isTester) return;
+   if(!g_historyPanelVisible) return;
+   DestroyHistoryPanel();
+   CreateHistoryPanel();
+  }
