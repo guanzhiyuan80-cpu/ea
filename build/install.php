@@ -61,11 +61,36 @@ try {
            AND INDEX_NAME   = 'uk_account_expiry_product'"
     );
     if ((int)$stmt->fetchColumn() === 0) {
+        // 补建唯一索引前，先清理表中的重复记录（保留 id 最小者）
+        try {
+            $dupBefore = (int)$pdo->query(
+                "SELECT COUNT(*) FROM (
+                     SELECT 1 FROM licenses
+                     GROUP BY account, expiry_date, product
+                     HAVING COUNT(*) > 1
+                 ) t"
+            )->fetchColumn();
+            if ($dupBefore > 0) {
+                $messages[] = "⚠ 检测到 $dupBefore 组 账号+有效期+产品 重复数据，正在清理……";
+                $del = $pdo->exec(
+                    "DELETE l1 FROM licenses l1
+                     INNER JOIN licenses l2
+                     WHERE l1.id > l2.id
+                       AND l1.account     = l2.account
+                       AND l1.expiry_date = l2.expiry_date
+                       AND l1.product     = l2.product"
+                );
+                $messages[] = "✓ 已删除 $del 条重复记录（保留最早生成的一条）";
+            }
+        } catch (Throwable $e) {
+            $messages[] = "⚠ 重复数据清理失败：" . htmlspecialchars($e->getMessage());
+        }
+
         try {
             $pdo->exec("ALTER TABLE `licenses` ADD UNIQUE KEY `uk_account_expiry_product` (`account`, `expiry_date`, `product`)");
             $messages[] = "✓ 唯一索引 uk_account_expiry_product 已补建（去重）";
         } catch (Throwable $e) {
-            $messages[] = "⚠ 唯一索引补建失败（如表中已有重复数据请先手动清理）：" . htmlspecialchars($e->getMessage());
+            $messages[] = "⚠ 唯一索引补建失败：" . htmlspecialchars($e->getMessage());
         }
     } else {
         $messages[] = "• 唯一索引 uk_account_expiry_product 已存在";
