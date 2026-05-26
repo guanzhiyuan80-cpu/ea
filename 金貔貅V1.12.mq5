@@ -438,6 +438,11 @@ double g_effATRCoeff    = 0.0;   // Effective ATR spacing coefficient
 double g_effBasketTP    = 0.0;   // Effective basket base TP (cents)
 double g_effBaseSpacing = 0.0;   // Effective base spacing (points)
 
+// 每层TP累计目标（启动时按账号种子生成稳定序列，每层增量在 InpMartBasketTPPerLayer × (1 ± 25%) 范围）
+// 防止多EA单边大趋势下同时触发TP共振，索引=层序号-1，0=首层
+#define MAX_TP_LAYERS 40
+double g_tpCumulative[MAX_TP_LAYERS];
+
 // 速度模式（运行时按钮动态切换 ATR 系数）：0=稳(0.20) 1=中(0.15) 2=快(0.10)
 int    g_speedMode      = 1;     // 默认中速
 
@@ -760,6 +765,50 @@ void ApplyAccountOffsets()
 }
 
 //+------------------------------------------------------------------+
+//| 生成每层TP累计目标序列（防多EA共振触发TP）                       |
+//| 实盘：每层增量 = InpMartBasketTPPerLayer × (1 + offset(100+i)×0.25)|
+//| 回测：每层固定 = InpMartBasketTPPerLayer（保证结果可复现）        |
+//+------------------------------------------------------------------+
+void BuildTpCumulative()
+{
+   g_tpCumulative[0] = g_effBasketTP;
+   bool tester = g_isTester;
+   double baseInc = InpMartBasketTPPerLayer;
+   string sample = "";
+   for(int i = 1; i < MAX_TP_LAYERS; i++)
+   {
+      double inc;
+      if(tester || baseInc <= 0.0)
+      {
+         inc = baseInc;
+      }
+      else
+      {
+         // ±25% 偏移，每层独立种子(salt=100+i)
+         inc = baseInc * (1.0 + GetAccountOffset((long)(100 + i)) * 0.25);
+         // Floor: 防止增量过小
+         if(inc < baseInc * 0.5) inc = baseInc * 0.5;
+      }
+      g_tpCumulative[i] = g_tpCumulative[i-1] + inc;
+      if(i <= 5)
+         sample += StringFormat(" L%d=%.1f", i+1, g_tpCumulative[i]);
+   }
+   PrintFormat("[TP序列] 基础=%.1f 每层基准增量=%.1f%s ... L%d=%.1f",
+               g_tpCumulative[0], baseInc, sample,
+               MAX_TP_LAYERS, g_tpCumulative[MAX_TP_LAYERS-1]);
+}
+
+//+------------------------------------------------------------------+
+//| 查表获取当前层动态TP目标（统一入口，避免多处公式不一致）         |
+//+------------------------------------------------------------------+
+double GetDynamicTP(int layers)
+{
+   if(layers < 1) layers = 1;
+   int idx = MathMin(layers - 1, MAX_TP_LAYERS - 1);
+   return g_tpCumulative[idx];
+}
+
+//+------------------------------------------------------------------+
 //| 速度模式切换：直接覆盖 g_effATRCoeff 与高亮按钮                   |
 //| 0=稳(0.20) 1=中(0.15) 2=快(0.10)                                 |
 //+------------------------------------------------------------------+
@@ -874,6 +923,7 @@ int OnInit()
       Print("Cent account detected (", acctCurrency, "). PnL values in cents.");
 
    ApplyAccountOffsets();  // Account-based parameter de-correlation
+   BuildTpCumulative();    // 生成每层TP累计目标序列（每层增量±25%偏移防共振）
 
    ResetDailyState(true);
    int timerSec = 0;
@@ -1794,14 +1844,16 @@ void TryMartAddLayer()
 void ManageMartBasketTP()
   {
    if(InpMartBasketTP_USD <= 0.0) return;
-   // 动态TP = 基础 + (层数-1) × 每层增量
+   // 动态TP = 查表(每层独立随机增量序列，启动时生成)
    int layers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
-   double dynamicTP = g_effBasketTP + (layers - 1) * InpMartBasketTPPerLayer;
+   int idx = MathMin(layers - 1, MAX_TP_LAYERS - 1);
+   if(idx < 0) idx = 0;
+   double dynamicTP = g_tpCumulative[idx];
    double pnl = GetEffectivePnL();
    if(pnl >= dynamicTP)
      {
       CloseAllMartPositions();
-      PrintFormat("篮子动态TP触发: 浮盈=%.2f >= 目标=%.2f (基础%.0f+(%d-1)×%.0f)", pnl, dynamicTP, g_effBasketTP, layers, InpMartBasketTPPerLayer);
+      PrintFormat("篮子动态TP触发: 浮盈=%.2f >= 目标=%.2f (层%d 查表)", pnl, dynamicTP, layers);
      }
   }
 
@@ -1825,7 +1877,7 @@ void ManageMartTrailing()
 
    // ---- 追踪门槛 = 当前动态TP × 启动比例% ----
    int layers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
-   double dynamicTP = g_effBasketTP + (layers - 1) * InpMartBasketTPPerLayer;
+   double dynamicTP = GetDynamicTP(layers);
    double minProfit = dynamicTP * InpMartTrailMinProfitPerLayer / 100.0;
 
    // 峰值未达到门槛时，不启用追踪
@@ -3321,7 +3373,7 @@ void UpdateStatusPanel()
    // --- Card 3: TP progress ---
    double tpPct = 0.0;
    int tpLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
-   double dynamicTPPanel = g_effBasketTP + (tpLayers - 1) * InpMartBasketTPPerLayer;
+   double dynamicTPPanel = GetDynamicTP(tpLayers);
    if(dynamicTPPanel > 0.0)
       tpPct = MathMin(100.0, MathMax(0.0, floatingPnl / dynamicTPPanel * 100.0));
    ObjectSetString(0, OBJ_CARD3_T, OBJPROP_TEXT, "TP进度");
@@ -3486,9 +3538,9 @@ void UpdateStatusPanel()
 
    // Line 4: 止盈止损参数显示
    {
-      // 篮子TP（动态：基础 + (层数-1)×增量）
+      // 篮子TP（动态：查表每层独立随机增量序列）
       int dispLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
-      double dynamicTP = g_effBasketTP + (dispLayers - 1) * InpMartBasketTPPerLayer;
+      double dynamicTP = GetDynamicTP(dispLayers);
       string tpText = (InpMartBasketTP_USD <= 0.0) ? "不限制" : StringFormat("%.0f美分", dynamicTP);
       // 硬止损
       string slText = (InpMartHardSL_USD <= 0.0) ? "不限制" : StringFormat("%.0f美分", InpMartHardSL_USD);
