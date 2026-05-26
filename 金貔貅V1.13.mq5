@@ -925,7 +925,10 @@ int OnInit()
    ApplyAccountOffsets();  // Account-based parameter de-correlation
    BuildTpCumulative();    // 生成每层TP累计目标序列（每层增量±25%偏移防共振）
 
-   ResetDailyState(true);
+   // 注意：不在 OnInit 调用 ResetDailyState(true)
+   // 否则 EA 中途挂上已有大浮亏的篮子时，g_dayStartModulePnl 不含当前浮亏，
+   // 首个 OnTick 会把历史浮亏当作"今日新增亏损"立即触发日亏锁定全平。
+   // 改由首次 OnTick 中 ResetDailyState(false) 自动初始化（g_dayKey=-1 会自动进入分支）。
    int timerSec = 0;
    if(InpShowStatusPanel)
      {
@@ -2218,12 +2221,12 @@ void CheckFastLossBreaker()
          g_fastLossMinEquity = martPnl;
          g_fastLossStartTime = TimeCurrent();
         }
-      // 超时但未触发：不完全重置，只更新起始点为当前值（滑动）
+      // 超时未触发：滑动到新窗口，同步重置最低点，使"跌幅"严格限定在最近 InpFastLossTime 秒内
       else if(TimeCurrent() - g_fastLossStartTime > InpFastLossTime)
         {
          g_fastLossStartEquity = martPnl;
          g_fastLossStartTime = TimeCurrent();
-         // 注意：g_fastLossMinEquity 不重置，保持追踪最低点
+         g_fastLossMinEquity = martPnl;  // 关键：窗口超时一并重置最低点，避免远古低点污染当前窗口
         }
      }
    else
@@ -2359,7 +2362,13 @@ void ManageHedgeRelease()
    if(InpHedgeReleaseMode == HEDGE_RELEASE_FIXED)
       releaseThreshold = InpHedgeReleaseFixed;
    else
-      releaseThreshold = g_martLayerCount * InpHedgeReleaseDynPerLayer;
+     {
+      // 仅剩对冲单（马丁已被手动平掉）时 g_martLayerCount=0，
+      // 若直接相乘会得到阈值 0 → 对冲微浮盈即立即全平。
+      // 此时按 1 层兜底，等同于"单层动态止盈"，避免误平对冲。
+      int effLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
+      releaseThreshold = effLayers * InpHedgeReleaseDynPerLayer;
+     }
 
    // 止盈条件：总浮盈达标 → 全平马丁+对冲
    if(totalPnl >= releaseThreshold)
@@ -3566,7 +3575,8 @@ void UpdateStatusPanel()
       else if(g_hedgeActive)
         {
          double totalPnl = floatingPnl + g_hedgePnl;
-         double releaseThreshold = (InpHedgeReleaseMode == HEDGE_RELEASE_FIXED) ? InpHedgeReleaseFixed : g_martLayerCount * InpHedgeReleaseDynPerLayer;
+         int dispEffLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
+         double releaseThreshold = (InpHedgeReleaseMode == HEDGE_RELEASE_FIXED) ? InpHedgeReleaseFixed : dispEffLayers * InpHedgeReleaseDynPerLayer;
          hedgeText = StringFormat("对冲: 激活中  总浮盈:%.1f(止盈>%.0f)  马丁:%.1f  对冲:%.1f  单数:%d  手数:%.2f",
             totalPnl, releaseThreshold, floatingPnl, g_hedgePnl, g_hedgeCount, g_hedgeLots);
         }
