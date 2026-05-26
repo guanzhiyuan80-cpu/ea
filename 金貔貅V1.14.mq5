@@ -1937,13 +1937,11 @@ void ResetDailyState(const bool force)
       g_dayHasModuleActivity = false;
       g_dailyLocked = false;
       g_martHardSLLocked = false;
-      g_fastLossLocked = false;
+      // 注意：g_fastLossLocked 等快速熔断状态【跨日不清】
+      // 否则跨日时若仍处锁定中，会让 EA 立即恢复开仓而错过价格回调判定，存在风险。
+      // 快速熔断只在'价格回到 lockPrice'时自然解锁，或重启 EA 时初始化。
       g_todayMaxDrawdown = 0.0;
       g_todayMaxDDPct = 0.0;
-      g_fastLossStartTime = 0;
-      g_fastLossPeakPrice = 0.0;
-      g_fastLossLockPrice = 0.0;
-      g_fastLossLockDir = 0;
      }
   }
 
