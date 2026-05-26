@@ -1011,7 +1011,17 @@ void OnTick()
    CheckFastLossBreaker();
    if(g_fastLossLocked)
      {
-      g_noEntryReason = "快速亏损熔断";
+      g_noEntryReason = "快速亏损熔断(锁开仓,等回调)";
+      // 锁定期保留已有持仓等回调，但仍跑止盈/硬止损/追踪，让回调出现时能自动平仓离场
+      int totalPos = CountMartPositions();
+      if(totalPos > 0)
+        {
+         RefreshMartBasketState();
+         ManageMartBasketTP();
+         CheckMartHardSL();
+         ManageMartTrailing();
+        }
+      ComputeSignalDiagnostics();
       return;
      }
 
@@ -2208,8 +2218,9 @@ void CheckFastLossBreaker()
         {
          g_fastLossLocked = true;
          g_fastLossMinEquity = martPnl;
-         CloseAllMartPositions();
-         PrintFormat("快速熔断触发: 浮盈从%.2f跌至%.2f, 跌幅=%.2f >= 阈值%d",
+         // 不全平马丁：保留持仓等待回调，避免在底部确认实亏
+         // 锁定期 OnTick 仍跑 ManageMartBasketTP/Trailing，回调出现时正常止盈离场
+         PrintFormat("快速熔断触发: 浮盈从%.2f跌至%.2f, 跌幅=%.2f >= 阈值%d | 已锁定新开仓,保留持仓等回调",
                      g_fastLossStartEquity, g_fastLossMinEquity, dropAmount, InpFastLossDistance);
          return;
         }
@@ -2231,8 +2242,10 @@ void CheckFastLossBreaker()
      }
    else
      {
-      // Locked: wait for recovery
+      // Locked: 持续追踪锁定期间真实最低点，等待从最低点反弹 ≥ InpFastLossRecoveryDistance 才解锁
       double martPnl = GetEffectivePnL();
+      if(martPnl < g_fastLossMinEquity)
+         g_fastLossMinEquity = martPnl;  // 锁定后若继续下跌，更新最低点（确保反弹幅度从真实底算起）
       double recoveryPoints = martPnl - g_fastLossMinEquity;
       if(recoveryPoints >= InpFastLossRecoveryDistance)
         {
