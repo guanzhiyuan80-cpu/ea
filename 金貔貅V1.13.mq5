@@ -379,9 +379,9 @@ input int             InpSMCWeightEMA           = DEF_SMC_WEIGHT_EMA;         //
 
 input group "=== 高级风控（默认关闭） ==="
 input bool             InpEnableFastLoss        = DEF_ENABLE_FAST_LOSS;      // ▶ 启用快速亏损紧急停止
-input int              InpFastLossDistance      = DEF_FAST_LOSS_DISTANCE;    // ▶ 多少金额亏损触发停止
+input int              InpFastLossDistance      = DEF_FAST_LOSS_DISTANCE;    // ▶ 反向价格变动触发(美分,800=8美元)
 input int              InpFastLossTime          = DEF_FAST_LOSS_TIME;        // ▶ 在几秒内发生算快速亏损
-input int              InpFastLossRecoveryDistance = DEF_FAST_LOSS_RECOVERY; // ▶ 回本多少金额解除停止
+input int              InpFastLossRecoveryDistance = DEF_FAST_LOSS_RECOVERY; // ▶ (已废弃)解锁改为价格回调至锁定价
 input bool             InpEnableHedge           = DEF_ENABLE_HEDGE;           // ▶ 启用亏损自动对冲保护
 input HEDGE_TRIGGER_MODE InpHedgeTriggerMode    = DEF_HEDGE_TRIGGER_MODE;     // ▶ 对冲触发方式
 input double           InpHedgeLossPercent      = DEF_HEDGE_LOSS_PCT;        // ▶ [权益%模式]亏损占权益多少%触发
@@ -446,11 +446,14 @@ double g_tpCumulative[MAX_TP_LAYERS];
 // 速度模式（运行时按钮动态切换 ATR 系数）：0=稳(0.20) 1=中(0.15) 2=快(0.10)
 int    g_speedMode      = 1;     // 默认中速
 
-// Fast loss breaker state
-double     g_fastLossStartEquity = 0.0;
-datetime   g_fastLossStartTime   = 0;
-double     g_fastLossMinEquity   = 0.0;
+// Fast loss breaker state（V1.13 改为基于价格振幅判断，与仓位规模解耦）
+double     g_fastLossStartEquity = 0.0;  // 已废弃，保留兼容
+datetime   g_fastLossStartTime   = 0;    // 当前窗口起始时间
+double     g_fastLossMinEquity   = 0.0;  // 已废弃，保留兼容
 bool       g_fastLossLocked      = false;
+double     g_fastLossPeakPrice   = 0.0;  // 窗口内对己最有利的极值价（多头记最高,空头记最低）
+double     g_fastLossLockPrice   = 0.0;  // 触发锁定时记录的Bid价，用作回调解锁基准
+int        g_fastLossLockDir     = 0;    // 锁定时的马丁方向（1=BUY,2=SELL）
 
 bool       g_closedPnlDirty = true;        // 标记需要重新计算
 
@@ -2194,66 +2197,80 @@ void CheckFastLossBreaker()
   {
    if(!InpEnableFastLoss) return;
 
+   // 无马丁方向时不评估也不维护窗口（没有持仓 → 价格波动与本 EA 无关）
+   if(g_martDirection == MART_DIR_NONE)
+     {
+      g_fastLossStartTime = 0;
+      g_fastLossPeakPrice = 0.0;
+      return;
+     }
+
+   double curBid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(curBid <= 0.0) return;
+
    if(!g_fastLossLocked)
      {
-      // 使用EA仓位盈亏而非整个账户权益
-      double martPnl = GetEffectivePnL();
-
-      // 初始化或滑动窗口更新
+      // 初始化窗口：以当前价为起点
       if(g_fastLossStartTime == 0)
         {
-         g_fastLossStartEquity = martPnl;
          g_fastLossStartTime = TimeCurrent();
-         g_fastLossMinEquity = martPnl;
+         g_fastLossPeakPrice = curBid;
          return;
         }
 
-      // 更新最低点
-      if(martPnl < g_fastLossMinEquity)
-         g_fastLossMinEquity = martPnl;
-
-      // 检查从峰值到谷值的跌幅
-      double dropAmount = g_fastLossStartEquity - g_fastLossMinEquity;
-      if(dropAmount >= InpFastLossDistance)
+      // 持续追踪窗口内"对己最有利"的极值价（峰值）
+      // 多头篮子：跌为不利，峰值=最高价；空头篮子：涨为不利，峰值=最低价
+      if(g_martDirection == MART_DIR_BUY)
         {
-         g_fastLossLocked = true;
-         g_fastLossMinEquity = martPnl;
-         // 不全平马丁：保留持仓等待回调，避免在底部确认实亏
-         // 锁定期 OnTick 仍跑 ManageMartBasketTP/Trailing，回调出现时正常止盈离场
-         PrintFormat("快速熔断触发: 浮盈从%.2f跌至%.2f, 跌幅=%.2f >= 阈值%d | 已锁定新开仓,保留持仓等回调",
-                     g_fastLossStartEquity, g_fastLossMinEquity, dropAmount, InpFastLossDistance);
+         if(curBid > g_fastLossPeakPrice) g_fastLossPeakPrice = curBid;
+        }
+      else // MART_DIR_SELL
+        {
+         if(curBid < g_fastLossPeakPrice) g_fastLossPeakPrice = curBid;
+        }
+
+      // 计算反向变动幅度（美元）：多头看 peak→cur 跌幅，空头看 cur→peak 涨幅
+      double adverseDollar = (g_martDirection == MART_DIR_BUY)
+                              ? (g_fastLossPeakPrice - curBid)
+                              : (curBid - g_fastLossPeakPrice);
+      // 触发判定：反向变动美元 ×100 ≥ 阈值（参数单位"美分价格",800=8美元）
+      if(adverseDollar * 100.0 >= (double)InpFastLossDistance)
+        {
+         g_fastLossLocked    = true;
+         g_fastLossLockPrice = curBid;
+         g_fastLossLockDir   = (int)g_martDirection;
+         PrintFormat("快速熔断触发: 方向=%s 窗口峰价=%.3f→当前=%.3f 反向%.2f美元≥%.2f美元 | 锁定开仓,等价回至%.3f",
+                     (g_martDirection==MART_DIR_BUY?"BUY":"SELL"),
+                     g_fastLossPeakPrice, curBid, adverseDollar,
+                     InpFastLossDistance/100.0, g_fastLossLockPrice);
          return;
         }
 
-      // 滑动窗口：如果盈亏改善，更新起始基准
-      if(martPnl > g_fastLossStartEquity)
+      // 窗口超时：滑动到新窗口（以当前价为新峰）
+      if(TimeCurrent() - g_fastLossStartTime > InpFastLossTime)
         {
-         g_fastLossStartEquity = martPnl;
-         g_fastLossMinEquity = martPnl;
          g_fastLossStartTime = TimeCurrent();
-        }
-      // 超时未触发：滑动到新窗口，同步重置最低点，使"跌幅"严格限定在最近 InpFastLossTime 秒内
-      else if(TimeCurrent() - g_fastLossStartTime > InpFastLossTime)
-        {
-         g_fastLossStartEquity = martPnl;
-         g_fastLossStartTime = TimeCurrent();
-         g_fastLossMinEquity = martPnl;  // 关键：窗口超时一并重置最低点，避免远古低点污染当前窗口
+         g_fastLossPeakPrice = curBid;
         }
      }
    else
      {
-      // Locked: 持续追踪锁定期间真实最低点，等待从最低点反弹 ≥ InpFastLossRecoveryDistance 才解锁
-      double martPnl = GetEffectivePnL();
-      if(martPnl < g_fastLossMinEquity)
-         g_fastLossMinEquity = martPnl;  // 锁定后若继续下跌，更新最低点（确保反弹幅度从真实底算起）
-      double recoveryPoints = martPnl - g_fastLossMinEquity;
-      if(recoveryPoints >= InpFastLossRecoveryDistance)
+      // Locked: 等价格回调至锁定价（多头：curBid≥lockPrice；空头：curBid≤lockPrice）
+      bool recovered = false;
+      if(g_fastLossLockDir == (int)MART_DIR_BUY)
+         recovered = (curBid >= g_fastLossLockPrice);
+      else if(g_fastLossLockDir == (int)MART_DIR_SELL)
+         recovered = (curBid <= g_fastLossLockPrice);
+
+      if(recovered)
         {
-         g_fastLossLocked = false;
-         g_fastLossStartEquity = 0.0;
+         PrintFormat("快速熔断解除: 价回调至%.3f(锁定价%.3f), 恢复开仓",
+                     curBid, g_fastLossLockPrice);
+         g_fastLossLocked    = false;
          g_fastLossStartTime = 0;
-         g_fastLossMinEquity = 0.0;
-         Print("Fast loss breaker recovered: martPnl recovered ", recoveryPoints, " currency units");
+         g_fastLossPeakPrice = 0.0;
+         g_fastLossLockPrice = 0.0;
+         g_fastLossLockDir   = 0;
         }
      }
   }
