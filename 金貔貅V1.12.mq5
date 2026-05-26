@@ -438,6 +438,9 @@ double g_effATRCoeff    = 0.0;   // Effective ATR spacing coefficient
 double g_effBasketTP    = 0.0;   // Effective basket base TP (cents)
 double g_effBaseSpacing = 0.0;   // Effective base spacing (points)
 
+// 速度模式（运行时按钮动态切换 ATR 系数）：0=稳(0.20) 1=中(0.15) 2=快(0.10)
+int    g_speedMode      = 1;     // 默认中速
+
 // Fast loss breaker state
 double     g_fastLossStartEquity = 0.0;
 datetime   g_fastLossStartTime   = 0;
@@ -522,6 +525,10 @@ string OBJ_CHART_BG     = "HYB_CHART_BG";
 string OBJ_LOGO_FRAME   = "HYB_LOGO_FRAME";
 string OBJ_BTN_BG       = "HYB_BTN_BG";
 string OBJ_BTN_TOGGLE   = "HYB_BTN_TOGGLE";
+// 速度模式按钮（顶栏右上：稳/中/快）
+string OBJ_BTN_SPEED_S  = "HYB_BTN_SPEED_S";  // 稳 = 0.20
+string OBJ_BTN_SPEED_M  = "HYB_BTN_SPEED_M";  // 中 = 0.15
+string OBJ_BTN_SPEED_F  = "HYB_BTN_SPEED_F";  // 快 = 0.10
 string BG_RES           = "::HYB_BG_RES";
 string LOGO_RES         = "::HYB_LOGO_RES";
 
@@ -750,6 +757,36 @@ void ApplyAccountOffsets()
                AccountInfoInteger(ACCOUNT_LOGIN), g_effATRCoeff, InpMartATRSpacingCoeff,
                g_effBasketTP, InpMartBasketTP_USD,
                g_effBaseSpacing, InpMartBaseSpacingPts);
+}
+
+//+------------------------------------------------------------------+
+//| 速度模式切换：直接覆盖 g_effATRCoeff 与高亮按钮                   |
+//| 0=稳(0.20) 1=中(0.15) 2=快(0.10)                                 |
+//+------------------------------------------------------------------+
+void RefreshSpeedButtons()
+{
+   if(g_isTester) return;
+   string names[3] = {OBJ_BTN_SPEED_S, OBJ_BTN_SPEED_M, OBJ_BTN_SPEED_F};
+   for(int i = 0; i < 3; i++)
+   {
+      if(ObjectFind(0, names[i]) < 0) continue;
+      bool active = (i == g_speedMode);
+      ObjectSetInteger(0, names[i], OBJPROP_BGCOLOR, active ? C'230,180,40' : C'80,90,110');
+      ObjectSetInteger(0, names[i], OBJPROP_BORDER_COLOR, active ? clrWhite : C'150,160,180');
+      ObjectSetInteger(0, names[i], OBJPROP_COLOR,  active ? C'30,30,30' : clrWhite);
+      ObjectSetInteger(0, names[i], OBJPROP_STATE, false);
+   }
+}
+
+void SetSpeedMode(int mode)
+{
+   if(mode < 0 || mode > 2) return;
+   g_speedMode = mode;
+   double values[3] = {0.20, 0.15, 0.10};
+   g_effATRCoeff = values[mode];
+   RefreshSpeedButtons();
+   string label = (mode == 0 ? "稳" : (mode == 1 ? "中" : "快"));
+   PrintFormat("[速度切换] 模式=%s | ATR系数=%.2f", label, g_effATRCoeff);
 }
 
 int OnInit()
@@ -1089,6 +1126,18 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          g_historyPanelVisible = false;
          DestroyHistoryPanel();
          return;
+        }
+      else if(sparam == OBJ_BTN_SPEED_S) // 稳=0.20
+        {
+         SetSpeedMode(0);
+        }
+      else if(sparam == OBJ_BTN_SPEED_M) // 中=0.15
+        {
+         SetSpeedMode(1);
+        }
+      else if(sparam == OBJ_BTN_SPEED_F) // 快=0.10
+        {
+         SetSpeedMode(2);
         }
      }
   }
@@ -2789,7 +2838,7 @@ void CreateStatusPanel()
    if(ObjectFind(0, OBJ_SMC_OFFSET) < 0)
       ObjectCreate(0, OBJ_SMC_OFFSET, OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_XDISTANCE, g_panelX + 370);
+   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_XDISTANCE, g_panelX + 380);
    ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_YDISTANCE, totalY);
    ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_COLOR, C'180,200,140');
    ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_FONTSIZE, 9);
@@ -2940,6 +2989,38 @@ void CreateStatusPanel()
    ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_ZORDER, 10);
    ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, OBJ_BTN_TOGGLE, OBJPROP_HIDDEN, true);
+
+   // --- 速度模式按钮组（顶栏右上：稳/中/快，运行时动态调整 ATR 系数） ---
+   int speedBtnW = 42;
+   int speedBtnH = 24;
+   int speedGap  = 4;
+   // 顶栏内右端 = g_panelX + g_panelW - 128（contentW=g_panelW-120，内边距8）
+   int speedX0   = g_panelX + g_panelW - 128 - 8 - (speedBtnW * 3 + speedGap * 2);
+   int speedY    = g_panelY + 10;
+   string speedNames[3] = {OBJ_BTN_SPEED_S, OBJ_BTN_SPEED_M, OBJ_BTN_SPEED_F};
+   string speedTexts[3] = {"稳", "中", "快"};
+   for(int s = 0; s < 3; s++)
+   {
+      int sx = speedX0 + s * (speedBtnW + speedGap);
+      if(ObjectFind(0, speedNames[s]) < 0)
+         ObjectCreate(0, speedNames[s], OBJ_BUTTON, 0, 0, 0);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_XDISTANCE, sx);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_YDISTANCE, speedY);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_XSIZE, speedBtnW);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_YSIZE, speedBtnH);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_COLOR, clrWhite);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_BGCOLOR, C'80,90,110');
+      ObjectSetInteger(0, speedNames[s], OBJPROP_BORDER_COLOR, C'150,160,180');
+      ObjectSetInteger(0, speedNames[s], OBJPROP_FONTSIZE, 10);
+      ObjectSetString(0, speedNames[s], OBJPROP_FONT, "Microsoft YaHei UI");
+      ObjectSetString(0, speedNames[s], OBJPROP_TEXT, speedTexts[s]);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_ZORDER, 11);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, speedNames[s], OBJPROP_HIDDEN, true);
+   }
+   // 应用默认（或用户上次选择的）速度模式
+   SetSpeedMode(g_speedMode);
   }
 
 void CreateCardObj(string bgName, string titleName, string valueName, string subName,
@@ -3136,6 +3217,9 @@ void DestroyStatusPanel()
    ObjectDelete(0, OBJ_BTN1); ObjectDelete(0, OBJ_BTN2); ObjectDelete(0, OBJ_BTN3);
    ObjectDelete(0, OBJ_BTN4); ObjectDelete(0, OBJ_BTN5); ObjectDelete(0, OBJ_BTN6);
    ObjectDelete(0, "HYB_BTN_HIST");
+   ObjectDelete(0, OBJ_BTN_SPEED_S);
+   ObjectDelete(0, OBJ_BTN_SPEED_M);
+   ObjectDelete(0, OBJ_BTN_SPEED_F);
    ResourceFree(LOGO_RES);
    ResourceFree(BG_RES);
   }
