@@ -511,6 +511,7 @@ string OBJ_SMC_D3A    = "HYB_SMC_D3A";    // LiqVoid
 string OBJ_SMC_D3B    = "HYB_SMC_D3B";    // Breaker
 string OBJ_SMC_D3S    = "HYB_SMC_D3S";    // 小周期小计
 string OBJ_SMC_TOTAL  = "HYB_SMC_TOTAL";  // 综合得分行
+string OBJ_SMC_OFFSET = "HYB_SMC_OFFSET"; // 账户偏移参数（综合行右侧独立Label，避开63字符上限）
 string OBJ_BTN1         = "HYB_BTN_CLOSEBUY";
 string OBJ_BTN2         = "HYB_BTN_CLOSESELL";
 string OBJ_BTN3         = "HYB_BTN_CLOSEPROFIT";
@@ -2781,6 +2782,19 @@ void CreateStatusPanel()
    ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_HIDDEN, true);
    ObjectSetString(0, OBJ_SMC_TOTAL, OBJPROP_TEXT, "");
 
+   // 综合行右侧 - 账户偏移参数独立 Label（绕开 OBJPROP_TEXT 63字符上限）
+   if(ObjectFind(0, OBJ_SMC_OFFSET) < 0)
+      ObjectCreate(0, OBJ_SMC_OFFSET, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_XDISTANCE, g_panelX + 360);
+   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_YDISTANCE, totalY);
+   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_COLOR, C'180,200,140');
+   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, OBJ_SMC_OFFSET, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_SMC_OFFSET, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, OBJ_SMC_OFFSET, OBJPROP_TEXT, "");
+
    // --- Info Lines (all 6 active) ---
    int lineY = g_panelY + 250;
    int lineGap = 20;
@@ -3109,6 +3123,7 @@ void DestroyStatusPanel()
    ObjectDelete(0, OBJ_SMC_D2A); ObjectDelete(0, OBJ_SMC_D2B); ObjectDelete(0, OBJ_SMC_D2S);
    ObjectDelete(0, OBJ_SMC_D3A); ObjectDelete(0, OBJ_SMC_D3B); ObjectDelete(0, OBJ_SMC_D3S);
    ObjectDelete(0, OBJ_SMC_TOTAL);
+   ObjectDelete(0, OBJ_SMC_OFFSET);
    // 删除所有可能的LINE对象 (0-9)，确保无残留
    for(int i = 0; i < 10; i++)
      {
@@ -3558,8 +3573,9 @@ void UpdateStatusPanel()
          if(CopyBuffer(g_hCCI, 0, 1, 1, cciVal) >= 1)
             totalText += StringFormat(" CCI实时:%+d/±%d", (int)MathRound(cciVal[0]), InpSMC_CCIExtreme);
         }
-      // 账户偏移后的实际生效参数(ATR系数/基准间距/篮子止盈)
-      totalText += StringFormat(" 偏%.3f/%.0f/%.1f", g_effATRCoeff, g_effBaseSpacing, g_effBasketTP);
+      // 账户偏移后的实际生效参数(ATR系数/基准间距/篮子止盈) → 独立 Label，避开综合行 63字符上限
+      string offsetText = StringFormat("[偏 %.3f/%.0f/%.1f]", g_effATRCoeff, g_effBaseSpacing, g_effBasketTP);
+      ObjectSetString(0, OBJ_SMC_OFFSET, OBJPROP_TEXT, offsetText);
       ObjectSetString(0, OBJ_SMC_TOTAL, OBJPROP_TEXT, totalText);
       ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_COLOR, bestScore >= InpSMCScoreThreshold ? C'80,200,120' : C'140,155,180');
      }
