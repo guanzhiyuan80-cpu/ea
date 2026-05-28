@@ -433,6 +433,8 @@ datetime g_martLastLayerTime = 0;     // last individual layer addition time
 double g_effATRCoeff    = 0.0;   // Effective ATR spacing coefficient
 double g_effBasketTP    = 0.0;   // Effective basket base TP (cents)
 double g_effBaseSpacing = 0.0;   // Effective base spacing (points)
+int    g_effEmaFast     = 0;     // Effective EMA fast period (偏移后)
+int    g_effEmaSlow     = 0;     // Effective EMA slow period (偏移后)
 
 // 每层TP累计目标（启动时按账号种子生成稳定序列，每层增量在 InpMartBasketTPPerLayer × (1 ± 25%) 范围）
 // 防止多EA单边大趋势下同时触发TP共振，索引=层序号-1，0=首层
@@ -741,8 +743,10 @@ void ApplyAccountOffsets()
       g_effATRCoeff    = InpMartATRSpacingCoeff;
       g_effBasketTP    = InpMartBasketTP_USD;
       g_effBaseSpacing = InpMartBaseSpacingPts;
-      PrintFormat("[账户偏移] 回测/优化模式，使用原始参数 | ATR系数=%.4f TP基础=%.1f 基准间距=%d",
-                  g_effATRCoeff, g_effBasketTP, InpMartBaseSpacingPts);
+      g_effEmaFast     = InpMartEmaFastPeriod;
+      g_effEmaSlow     = InpMartEmaSlowPeriod;
+      PrintFormat("[账户偏移] 回测/优化模式，使用原始参数 | ATR系数=%.4f TP基础=%.1f 基准间距=%d EMA=%d/%d",
+                  g_effATRCoeff, g_effBasketTP, InpMartBaseSpacingPts, g_effEmaFast, g_effEmaSlow);
       return;
    }
 
@@ -750,15 +754,25 @@ void ApplyAccountOffsets()
    g_effBasketTP    = InpMartBasketTP_USD   * (1.0 + GetAccountOffset(2) * 0.25);
    g_effBaseSpacing = InpMartBaseSpacingPts  * (1.0 + GetAccountOffset(3) * 0.20);
 
+   // EMA 偏移: Fast ±15%, Slow ±10%（取整，保证 fast < slow）
+   double emaFastOff = GetAccountOffset(4) * 0.15;  // [-0.15, +0.15]
+   double emaSlowOff = GetAccountOffset(5) * 0.10;  // [-0.10, +0.10]
+   g_effEmaFast = (int)MathRound(InpMartEmaFastPeriod * (1.0 + emaFastOff));
+   g_effEmaSlow = (int)MathRound(InpMartEmaSlowPeriod * (1.0 + emaSlowOff));
+   // 安全约束: Fast≥3, Slow≥Fast+3
+   if(g_effEmaFast < 3) g_effEmaFast = 3;
+   if(g_effEmaSlow <= g_effEmaFast + 2) g_effEmaSlow = g_effEmaFast + 3;
+
    // Floor: prevent parameters going too low (but respect 0=disabled)
    if(InpMartATRSpacingCoeff > 0.0 && g_effATRCoeff < 0.001)  g_effATRCoeff = 0.001;
    if(InpMartBasketTP_USD > 0.0   && g_effBasketTP < 1.0)    g_effBasketTP = 1.0;
    if(InpMartBaseSpacingPts > 0   && g_effBaseSpacing < 20.0) g_effBaseSpacing = 20.0;
 
-   PrintFormat("[账户偏移] 账号=%lld | ATR系数=%.4f(原%.4f) TP基础=%.1f(原%.1f) 基准间距=%.0f(原%d)",
+   PrintFormat("[账户偏移] 账号=%lld | ATR系数=%.4f(原%.4f) TP基础=%.1f(原%.1f) 基准间距=%.0f(原%d) EMA=%d/%d(原%d/%d)",
                AccountInfoInteger(ACCOUNT_LOGIN), g_effATRCoeff, InpMartATRSpacingCoeff,
                g_effBasketTP, InpMartBasketTP_USD,
-               g_effBaseSpacing, InpMartBaseSpacingPts);
+               g_effBaseSpacing, InpMartBaseSpacingPts,
+               g_effEmaFast, g_effEmaSlow, InpMartEmaFastPeriod, InpMartEmaSlowPeriod);
 }
 
 //+------------------------------------------------------------------+
@@ -829,10 +843,16 @@ void SetSpeedMode(int mode)
    if(mode < 0 || mode > 2) return;
    g_speedMode = mode;
    double values[3] = {0.20, 0.15, 0.10};
-   g_effATRCoeff = values[mode];
+   double base = values[mode];
+   // 在檔位基准值上应用账号偏移，避免多实例ATR系数完全相同
+   if(!g_isTester)
+      g_effATRCoeff = base * (1.0 + GetAccountOffset(1) * 0.15);
+   else
+      g_effATRCoeff = base;
+   if(g_effATRCoeff < 0.01) g_effATRCoeff = 0.01;  // 地板保护
    RefreshSpeedButtons();
    string label = (mode == 0 ? "稳" : (mode == 1 ? "中" : "快"));
-   PrintFormat("[速度切换] 模式=%s | ATR系数=%.2f", label, g_effATRCoeff);
+   PrintFormat("[速度切换] 模式=%s | ATR系数=%.4f(基准%.2f)", label, g_effATRCoeff, base);
 }
 
 int OnInit()
@@ -863,8 +883,11 @@ int OnInit()
    g_trade.SetExpertMagicNumber(InpMagicNumber);
    g_trade.SetDeviationInPoints(50);
 
-   g_hEmaFastM1 = iMA(_Symbol, InpMartEntryTF, InpMartEmaFastPeriod, 0, MODE_EMA, PRICE_CLOSE);
-   g_hEmaSlowM1 = iMA(_Symbol, InpMartEntryTF, InpMartEmaSlowPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   ApplyAccountOffsets();  // Account-based parameter de-correlation (must before iMA creation)
+   BuildTpCumulative();    // 生成每层TP累计目标序列（每层增量±25%偏移防共振）
+
+   g_hEmaFastM1 = iMA(_Symbol, InpMartEntryTF, g_effEmaFast, 0, MODE_EMA, PRICE_CLOSE);
+   g_hEmaSlowM1 = iMA(_Symbol, InpMartEntryTF, g_effEmaSlow, 0, MODE_EMA, PRICE_CLOSE);
    g_hEmaH4     = iMA(_Symbol, PERIOD_H4, InpMartH4EmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
 
    if(g_hEmaFastM1 == INVALID_HANDLE || g_hEmaSlowM1 == INVALID_HANDLE || g_hEmaH4 == INVALID_HANDLE)
@@ -918,9 +941,6 @@ int OnInit()
       Print("Warning: non-cent account (", acctCurrency, "). All PnL values are in account currency units. For cent accounts expect USC/CEN.");
    else
       Print("Cent account detected (", acctCurrency, "). PnL values in cents.");
-
-   ApplyAccountOffsets();  // Account-based parameter de-correlation
-   BuildTpCumulative();    // 生成每层TP累计目标序列（每层增量±25%偏移防共振）
 
    // 注意：不在 OnInit 调用 ResetDailyState(true)
    // 否则 EA 中途挂上已有大浮亏的篮子时，g_dayStartModulePnl 不含当前浮亏，
