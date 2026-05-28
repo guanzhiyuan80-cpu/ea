@@ -1038,6 +1038,12 @@ void OnTick()
          CheckMartHardSL();
          ManageMartTrailing();
         }
+      else
+        {
+         // 篮子已全平但本分支 return 跳过了主逻辑的 g_martDirection 重置点
+         // 手动置 NONE，使下一 tick CheckFastLossBreaker 的 NONE 分支自动解除锁定
+         g_martDirection = MART_DIR_NONE;
+        }
       ComputeSignalDiagnostics();
       return;
      }
