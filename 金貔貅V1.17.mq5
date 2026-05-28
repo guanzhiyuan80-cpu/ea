@@ -1029,11 +1029,14 @@ void OnTick()
    if(g_fastLossLocked)
      {
       g_noEntryReason = "快速亏损熔断(锁开仓,等回调)";
-      // 锁定期保留已有持仓等回调，但仍跑止盈/硬止损/追踪，让回调出现时能自动平仓离场
+      // 锁定期保留已有持仓等回调，仍跑止盈/硬止损/追踪/对冲管理
       int totalPos = CountMartPositions();
       if(totalPos > 0)
         {
          RefreshMartBasketState();
+         RefreshHedgeState();      // 对冲PnL必须每 tick 刷新，否则 GetEffectivePnL 失真
+         ManageHedgeLock();        // 允许对冲保护在熔断期间仍能激活/追加
+         ManageHedgeRelease();     // 对冲止盈仍需运行（追踪已被 hedgeActive 跳过）
          ManageMartBasketTP();
          CheckMartHardSL();
          ManageMartTrailing();
@@ -1070,6 +1073,9 @@ void OnTick()
       if(totalPos > 0)
         {
          RefreshMartBasketState();
+         RefreshHedgeState();
+         ManageHedgeLock();
+         ManageHedgeRelease();
          ManageMartBasketTP();
          CheckMartHardSL();
          ManageMartTrailing();
@@ -1083,11 +1089,14 @@ void OnTick()
    if(g_manualPaused)
      {
       g_noEntryReason = "手动暂停交易中";
-      // 暂停时仍执行止盈止损和风控
+      // 暂停时仍执行止盈止损和风控（含对冲管理）
       int totalPos = CountMartPositions();
       if(totalPos > 0)
         {
          RefreshMartBasketState();
+         RefreshHedgeState();
+         ManageHedgeLock();
+         ManageHedgeRelease();
          ManageMartBasketTP();
          CheckMartHardSL();
          ManageMartTrailing();
