@@ -9,6 +9,7 @@ InpServerUtcOffsetHours=2
 InpEnableNewsFilter=true
 InpNewsBlockThu2030=true
 InpNewsBlockFirstFri2030=true
+InpAutoUsDstNewsTime=true
 InpNewsDataHour=20
 InpNewsDataMinute=30
 InpNewsBlockPreMinutes=10

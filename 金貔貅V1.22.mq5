@@ -309,8 +309,9 @@ input int              InpServerUtcOffsetHours   = DEF_SERVER_OFFSET;         //
 input bool             InpEnableNewsFilter       = DEF_ENABLE_NEWS_FILTER;    // ▶ 启用新闻过滤(仅禁开仓/加层,不强平)
 input bool             InpNewsBlockThu2030       = true;                      // ▶ 周四20:30数据窗口(初请等)
 input bool             InpNewsBlockFirstFri2030  = true;                      // ▶ 每月第一个周五20:30非农窗口
-input int              InpNewsDataHour           = 20;                        // ▶ 美国08:30数据对应北京时间小时(冬令时可改21)
-input int              InpNewsDataMinute         = 30;                        // ▶ 美国08:30数据对应北京时间分钟
+input bool             InpAutoUsDstNewsTime      = true;                      // ▶ 自动按美国夏/冬令时换算08:30数据
+input int              InpNewsDataHour           = 20;                        // ▶ 手动模式:美国08:30数据对应北京时间小时
+input int              InpNewsDataMinute         = 30;                        // ▶ 手动模式:美国08:30数据对应北京时间分钟
 input int              InpNewsBlockPreMinutes    = 10;                        // ▶ 新闻前禁开分钟
 input int              InpNewsBlockPostMinutes   = 40;                        // ▶ 新闻后禁开分钟
 input bool             InpUseManualNewsBlock     = DEF_USE_NEWS_BLOCK;        // ▶ 启用自定义新闻窗口
@@ -630,6 +631,7 @@ bool   IsATRAddPaused();
 bool   IsEntryChaseBlocked(const ENUM_POSITION_TYPE side);
 double GetDeepProtectTPFactor(const int layers);
 string GetNewsBlockReason();
+int    GetUs0830DataMinuteBeijing(const MqlDateTime &chinaTime);
 
 // ========== 离线授权码验证 ==========
 #define LICENSE_XOR_KEY "JPX2025GoldEA!@#"   // XOR密钥，必须与Python生成工具一致
@@ -2100,6 +2102,52 @@ bool IsMinuteInWindow(const int nowMinute, const int startMinute, const int endM
    return (nowM >= startM || nowM < endM);
   }
 
+int WeekdayOfDate(const int year, const int month, const int day)
+  {
+   MqlDateTime dt;
+   dt.year = year;
+   dt.mon = month;
+   dt.day = day;
+   dt.hour = 12;
+   dt.min = 0;
+   dt.sec = 0;
+   datetime ts = StructToTime(dt);
+   MqlDateTime out;
+   TimeToStruct(ts, out);
+   return out.day_of_week;
+  }
+
+int NthSundayOfMonth(const int year, const int month, const int nth)
+  {
+   int firstDow = WeekdayOfDate(year, month, 1);
+   int firstSunday = 1 + ((7 - firstDow) % 7);
+   return firstSunday + (nth - 1) * 7;
+  }
+
+int GetUs0830DataMinuteBeijing(const MqlDateTime &chinaTime)
+  {
+   if(!InpAutoUsDstNewsTime)
+      return InpNewsDataHour * 60 + InpNewsDataMinute;
+
+   int y = chinaTime.year;
+   int m = chinaTime.mon;
+   int d = chinaTime.day;
+   int secondSundayMarch = NthSundayOfMonth(y, 3, 2);
+   int firstSundayNovember = NthSundayOfMonth(y, 11, 1);
+   bool usDst = false;
+
+   if(m > 3 && m < 11)
+      usDst = true;
+   else if(m == 3 && d > secondSundayMarch)
+      usDst = true;
+   else if(m == 3 && d == secondSundayMarch)
+      usDst = true;   // 08:30 ET is after the 02:00 local DST switch.
+   else if(m == 11 && d < firstSundayNovember)
+      usDst = true;
+
+   return (usDst ? 20 : 21) * 60 + 30;
+  }
+
 string GetNewsBlockReason()
   {
    datetime chinaNow = GetChinaNow();
@@ -2109,7 +2157,7 @@ string GetNewsBlockReason()
 
    int preMin = MathMax(0, InpNewsBlockPreMinutes);
    int postMin = MathMax(0, InpNewsBlockPostMinutes);
-   int us0830 = InpNewsDataHour * 60 + InpNewsDataMinute;  // 美国08:30数据对应北京时间
+   int us0830 = GetUs0830DataMinuteBeijing(t);
 
    if(InpEnableNewsFilter)
      {

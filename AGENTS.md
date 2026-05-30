@@ -167,7 +167,7 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 - 自动窗口：
   - 周四 20:30 数据窗口（默认 20:20~21:10）
   - 每月第一个周五 20:30 非农窗口（默认 20:20~21:10）
-- `InpNewsDataHour/InpNewsDataMinute` 控制美国 08:30 数据对应的北京时间；夏令时默认 20:30，冬令时可改 21:30。
+- `InpAutoUsDstNewsTime=true` 自动按美国夏/冬令时换算美国 08:30 数据：夏令时北京时间 20:30，冬令时北京时间 21:30；关闭后用 `InpNewsDataHour/InpNewsDataMinute` 手动覆盖。
 - `InpUseManualNewsBlock` 保留为自定义新闻窗口，支持小时+分钟；FOMC 等非固定日期事件用自定义窗口处理。
 - 新闻过滤触发后**只锁新开仓和马丁加层，不强平**；已有持仓继续执行 TP、硬止损、追踪、对冲管理。
 
@@ -211,7 +211,8 @@ ManageHedgeRelease();     // 对冲止盈
 | `InpMartATRSpacingCoeff` | 0.15~0.20 | 5位精度推荐 0.20，6位精度 0.30 |
 | `InpMartBasketTPPerLayer` | 8 美分 | 每层 TP 增量基础值 |
 | `InpEnableNewsFilter` | true | 新闻过滤：锁新开仓/加层，不强平 |
-| `InpNewsDataHour/Minute` | 20 / 30 | 美国 08:30 数据对应北京时间（冬令时可改 21/30） |
+| `InpAutoUsDstNewsTime` | true | 自动按美国夏/冬令时换算 08:30 数据 |
+| `InpNewsDataHour/Minute` | 20 / 30 | 手动模式下美国 08:30 数据对应北京时间 |
 | `InpNewsBlockPreMinutes/PostMinutes` | 10 / 40 | 新闻前后禁开分钟 |
 | `InpEnableDeepProtectTP` | true | 深层守护 TP |
 | `InpDeepTPLevel1/2/3Start` | 6 / 10 / 16 | 守护 TP 起始层 |
