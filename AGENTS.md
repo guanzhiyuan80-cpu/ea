@@ -89,6 +89,12 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
   - `InpMartBasketTPPerLayer`（默认 8 美分）**不受偏移影响**
   - 多账号 TP 曲线为同斜率不同截距的平行线
 - **每层 TP 增量随机化**：±25%，下限保护 50%（避免增量趋零）
+- **深层守护 TP（V1.22）**：在动态 TP 计算出口统一乘守护系数，不做部分平仓：
+  - 1~5 层：100%
+  - 6~9 层：85%
+  - 10~15 层：70%
+  - 16 层以上：55%
+  - 最低目标 `InpDeepTPMinProfit` 默认 30 美分
 
 ### 4.3 对冲机制
 
@@ -155,7 +161,18 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 - `ATR短 / ATR长 <= 1.3`：恢复加仓
 - 只影响 `TryMartAddLayer()`，不影响熔断、止盈、止损、追踪、对冲。
 
-### 4.6 风控分支统一性（重要！）
+### 4.6 新闻过滤（V1.22）
+
+- `InpEnableNewsFilter=true` 默认启用自动新闻过滤。
+- 自动窗口：
+  - 周四 20:30 数据窗口（默认 20:20~21:10）
+  - 每月第一个周五 20:30 非农窗口（默认 20:20~21:10）
+- `InpNewsDataHour/InpNewsDataMinute` 控制美国 08:30 数据对应的北京时间；夏令时默认 20:30，冬令时可改 21:30。
+- `InpUseFomcNightBlock=false` 默认关闭；手动打开后使用 01:50~03:10 的 FOMC 夜间窗口。
+- `InpUseManualNewsBlock` 保留为自定义新闻窗口，支持小时+分钟。
+- 新闻过滤触发后**只锁新开仓和马丁加层，不强平**；已有持仓继续执行 TP、硬止损、追踪、对冲管理。
+
+### 4.7 风控分支统一性（重要！）
 
 OnTick 中以下三个提前 return 分支**必须**完整调用对冲管理三件套：
 1. 快速熔断锁定分支
@@ -168,7 +185,7 @@ ManageHedgeLock();        // 允许对冲激活/追加
 ManageHedgeRelease();     // 对冲止盈
 ```
 
-### 4.7 日截止时间（V1.20 已统一）
+### 4.8 日截止时间（V1.20 已统一）
 
 **统一为北京时间 00:00**：
 - 日盈亏统计区间：北京 00:00:00 ~ 当前
@@ -177,7 +194,7 @@ ManageHedgeRelease();     // 对冲止盈
 
 实现方式：通过 `GetChinaNow()` 函数（自动模式基于 `TimeGMT() + InpChinaUtcOffsetHours*3600`；手动模式为 `TimeCurrent() - InpServerUtcOffsetHours*3600 + InpChinaUtcOffsetHours*3600`）
 
-### 4.8 多账户参数随机偏移（防共振）
+### 4.9 多账户参数随机偏移（防共振）
 
 `ApplyAccountOffsets()` 对以下参数注入基于账户ID的偏移：
 - `g_effATRCoeff`：±15%
@@ -194,6 +211,13 @@ ManageHedgeRelease();     // 对冲止盈
 |------|--------|------|
 | `InpMartATRSpacingCoeff` | 0.15~0.20 | 5位精度推荐 0.20，6位精度 0.30 |
 | `InpMartBasketTPPerLayer` | 8 美分 | 每层 TP 增量基础值 |
+| `InpEnableNewsFilter` | true | 新闻过滤：锁新开仓/加层，不强平 |
+| `InpNewsDataHour/Minute` | 20 / 30 | 美国 08:30 数据对应北京时间（冬令时可改 21/30） |
+| `InpNewsBlockPreMinutes/PostMinutes` | 10 / 40 | 新闻前后禁开分钟 |
+| `InpEnableDeepProtectTP` | true | 深层守护 TP |
+| `InpDeepTPLevel1/2/3Start` | 6 / 10 / 16 | 守护 TP 起始层 |
+| `InpDeepTPLevel1/2/3Factor` | 0.85 / 0.70 / 0.55 | 守护 TP 系数 |
+| `InpDeepTPMinProfit` | 30 美分 | 守护 TP 最低目标 |
 | `InpHedgeMode` | HEDGE_MODE_OFF | 对冲模式（OFF/FIXED/LADDER），V1.22 新增 |
 | `InpHedgeRatio` | 0.5 | [固定模式]对冲手数比例 |
 | `InpHedgeLadderLoss1/2/3` | 1800 / 2600 / 3800 | 阶梯对冲浮亏阈值（美分） |

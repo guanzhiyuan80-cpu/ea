@@ -72,6 +72,9 @@ enum HEDGE_MODE
 #ifndef DEF_USE_NEWS_BLOCK
 #define DEF_USE_NEWS_BLOCK false
 #endif
+#ifndef DEF_ENABLE_NEWS_FILTER
+#define DEF_ENABLE_NEWS_FILTER true
+#endif
 #ifndef DEF_NEWS_BLOCK_START
 #define DEF_NEWS_BLOCK_START 20
 #endif
@@ -303,9 +306,23 @@ input group "=== 时间与交易时段（北京时间） ==="
 input int              InpChinaUtcOffsetHours    = DEF_CN_OFFSET;             // ▶ 北京时区=UTC+8
 input bool             InpAutoServerUtcOffset    = DEF_AUTO_SERVER_OFFSET;    // ▶ 自动检测服务器时区
 input int              InpServerUtcOffsetHours   = DEF_SERVER_OFFSET;         // ▶ 服务器UTC偏移(手动)
-input bool             InpUseManualNewsBlock     = DEF_USE_NEWS_BLOCK;        // ▶ 启用定时停止交易
-input int              InpNewsBlockStartHour     = DEF_NEWS_BLOCK_START;      // ▶ 停止交易开始(北京时整点)
-input int              InpNewsBlockEndHour       = DEF_NEWS_BLOCK_END;        // ▶ 停止交易结束(北京时整点)
+input bool             InpEnableNewsFilter       = DEF_ENABLE_NEWS_FILTER;    // ▶ 启用新闻过滤(仅禁开仓/加层,不强平)
+input bool             InpNewsBlockThu2030       = true;                      // ▶ 周四20:30数据窗口(初请等)
+input bool             InpNewsBlockFirstFri2030  = true;                      // ▶ 每月第一个周五20:30非农窗口
+input int              InpNewsDataHour           = 20;                        // ▶ 美国08:30数据对应北京时间小时(冬令时可改21)
+input int              InpNewsDataMinute         = 30;                        // ▶ 美国08:30数据对应北京时间分钟
+input int              InpNewsBlockPreMinutes    = 10;                        // ▶ 新闻前禁开分钟
+input int              InpNewsBlockPostMinutes   = 40;                        // ▶ 新闻后禁开分钟
+input bool             InpUseFomcNightBlock      = false;                     // ▶ 手动启用FOMC夜间窗口
+input int              InpFomcBlockStartHour     = 1;                         // ▶ FOMC窗口开始(北京时间小时)
+input int              InpFomcBlockStartMinute   = 50;                        // ▶ FOMC窗口开始(分钟)
+input int              InpFomcBlockEndHour       = 3;                         // ▶ FOMC窗口结束(北京时间小时)
+input int              InpFomcBlockEndMinute     = 10;                        // ▶ FOMC窗口结束(分钟)
+input bool             InpUseManualNewsBlock     = DEF_USE_NEWS_BLOCK;        // ▶ 启用自定义新闻窗口
+input int              InpNewsBlockStartHour     = DEF_NEWS_BLOCK_START;      // ▶ 自定义窗口开始(北京时间小时)
+input int              InpNewsBlockStartMinute   = 20;                        // ▶ 自定义窗口开始(分钟)
+input int              InpNewsBlockEndHour       = DEF_NEWS_BLOCK_END;        // ▶ 自定义窗口结束(北京时间小时)
+input int              InpNewsBlockEndMinute     = 10;                        // ▶ 自定义窗口结束(分钟)
 
 input group "=== 全局风控 ==="
 input double           InpMaxDailyLossPercent    = DEF_MAX_DAILY_LOSS;        // ▶ 日最大亏损占权益百分比
@@ -331,6 +348,14 @@ input double           InpMartMaxTotalLots       = DEF_MART_MAX_TOTAL_LOTS;   //
 input group "=== 止盈止损 ==="
 input double           InpMartBasketTP_USD       = DEF_MART_BASKET_TP;        // ▶ 篮子止盈基础(美分,0=关闭)
 input double           InpMartBasketTPPerLayer   = DEF_MART_BASKET_TP_PER_LAYER; // ▶ 每层TP增量(美分)
+input bool             InpEnableDeepProtectTP    = true;                      // ▶ 启用深层守护TP(深层降低目标优先脱身)
+input int              InpDeepTPLevel1Start      = 6;                         // ▶ 轻度守护起始层(1-5层正常)
+input double           InpDeepTPLevel1Factor     = 0.85;                      // ▶ 轻度守护TP系数
+input int              InpDeepTPLevel2Start      = 10;                        // ▶ 中度守护起始层
+input double           InpDeepTPLevel2Factor     = 0.70;                      // ▶ 中度守护TP系数
+input int              InpDeepTPLevel3Start      = 16;                        // ▶ 重度守护起始层
+input double           InpDeepTPLevel3Factor     = 0.55;                      // ▶ 重度守护TP系数
+input double           InpDeepTPMinProfit        = 30.0;                      // ▶ 守护TP最低目标(美分)
 input double           InpMartHardSL_USD         = DEF_MART_HARD_SL;          // ▶ 整篮子亏损多少强平(美分)
 input double           InpMartTrailPct           = DEF_MART_TRAIL_PCT;        // ▶ 浮盈保留峰值%平仓(70=回撤到峰值70%平仓,0=关闭)
 input double           InpMartTrailMinProfitPerLayer = DEF_MART_TRAIL_MIN_PROFIT_PER_LAYER; // ▶ 追踪启动门槛(占TP的%,60=浮盈达60%TP启动)
@@ -608,6 +633,8 @@ double GetHedgeTargetRatio(const double floatingPnl);
 double GetATRExpansionRatio();
 bool   IsATRAddPaused();
 bool   IsEntryChaseBlocked(const ENUM_POSITION_TYPE side);
+double GetDeepProtectTPFactor(const int layers);
+string GetNewsBlockReason();
 
 // ========== 离线授权码验证 ==========
 #define LICENSE_XOR_KEY "JPX2025GoldEA!@#"   // XOR密钥，必须与Python生成工具一致
@@ -842,7 +869,33 @@ double GetDynamicTP(int layers)
 {
    if(layers < 1) layers = 1;
    int idx = MathMin(layers - 1, MAX_TP_LAYERS - 1);
-   return g_tpCumulative[idx];
+   double rawTP = g_tpCumulative[idx];
+   if(!InpEnableDeepProtectTP)
+      return rawTP;
+
+   double factor = GetDeepProtectTPFactor(layers);
+   double guardedTP = rawTP * factor;
+   if(InpDeepTPMinProfit > 0.0)
+      guardedTP = MathMax(guardedTP, InpDeepTPMinProfit);
+   return guardedTP;
+}
+
+double GetDeepProtectTPFactor(const int layers)
+{
+   if(!InpEnableDeepProtectTP)
+      return 1.0;
+
+   double factor = 1.0;
+   if(InpDeepTPLevel1Start > 0 && layers >= InpDeepTPLevel1Start)
+      factor = InpDeepTPLevel1Factor;
+   if(InpDeepTPLevel2Start > 0 && layers >= InpDeepTPLevel2Start)
+      factor = InpDeepTPLevel2Factor;
+   if(InpDeepTPLevel3Start > 0 && layers >= InpDeepTPLevel3Start)
+      factor = InpDeepTPLevel3Factor;
+
+   if(factor <= 0.0) factor = 1.0;
+   if(factor > 1.0) factor = 1.0;
+   return factor;
 }
 
 //+------------------------------------------------------------------+
@@ -1084,11 +1137,23 @@ void OnTick()
       return;
      }
 
-   // News block: force flat if configured
+   // News filter: lock new entries/layers only; keep existing risk management running.
    if(IsManualNewsBlocked())
      {
-      CloseAllMartPositions();
-      g_noEntryReason = "定时休市中";
+      g_noEntryReason = GetNewsBlockReason();
+      int totalPos = CountMartPositions();
+      if(totalPos > 0)
+        {
+         RefreshMartBasketState();
+         RefreshHedgeState();
+         ManageHedgeLock();
+         ManageHedgeRelease();
+         ManageMartBasketTP();
+         CheckMartHardSL();
+         ManageMartTrailing();
+        }
+      ComputeSignalDiagnostics();
+      if(InpShowStatusPanel) UpdateStatusPanel();
       return;
      }
 
@@ -1932,14 +1997,13 @@ void ManageMartBasketTP()
    if(InpMartBasketTP_USD <= 0.0) return;
    // 动态TP = 查表(每层独立随机增量序列，启动时生成)
    int layers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
-   int idx = MathMin(layers - 1, MAX_TP_LAYERS - 1);
-   if(idx < 0) idx = 0;
-   double dynamicTP = g_tpCumulative[idx];
+   double dynamicTP = GetDynamicTP(layers);
    double pnl = GetEffectivePnL();
    if(pnl >= dynamicTP)
      {
       CloseAllMartPositions();
-      PrintFormat("篮子动态TP触发: 浮盈=%.2f >= 目标=%.2f (层%d 查表)", pnl, dynamicTP, layers);
+      PrintFormat("篮子动态TP触发: 浮盈=%.2f >= 目标=%.2f (层%d 守护系数=%.0f%%)",
+                  pnl, dynamicTP, layers, GetDeepProtectTPFactor(layers) * 100.0);
      }
   }
 
@@ -2022,23 +2086,69 @@ void ResetDailyState(const bool force)
   }
 
 
-bool IsManualNewsBlocked()
+int NormalizeDayMinute(const int minute)
   {
-   if(!InpUseManualNewsBlock)
-      return false;
+   int m = minute % 1440;
+   if(m < 0) m += 1440;
+   return m;
+  }
 
+bool IsMinuteInWindow(const int nowMinute, const int startMinute, const int endMinute)
+  {
+   int nowM = NormalizeDayMinute(nowMinute);
+   int startM = NormalizeDayMinute(startMinute);
+   int endM = NormalizeDayMinute(endMinute);
+   if(startM == endM)
+      return false;
+   if(startM < endM)
+      return (nowM >= startM && nowM < endM);
+   return (nowM >= startM || nowM < endM);
+  }
+
+string GetNewsBlockReason()
+  {
    datetime chinaNow = GetChinaNow();
    MqlDateTime t;
    TimeToStruct(chinaNow, t);
-   int h = t.hour;
+   int nowMinute = t.hour * 60 + t.min;
 
-   if(InpNewsBlockStartHour == InpNewsBlockEndHour)
-      return false;
+   int preMin = MathMax(0, InpNewsBlockPreMinutes);
+   int postMin = MathMax(0, InpNewsBlockPostMinutes);
+   int us0830 = InpNewsDataHour * 60 + InpNewsDataMinute;  // 美国08:30数据对应北京时间
 
-   if(InpNewsBlockStartHour < InpNewsBlockEndHour)
-      return (h >= InpNewsBlockStartHour && h < InpNewsBlockEndHour);
+   if(InpEnableNewsFilter)
+     {
+      if(InpNewsBlockThu2030 && t.day_of_week == 4 &&
+         IsMinuteInWindow(nowMinute, us0830 - preMin, us0830 + postMin))
+         return "新闻过滤:周四20:30数据";
 
-   return (h >= InpNewsBlockStartHour || h < InpNewsBlockEndHour);
+      if(InpNewsBlockFirstFri2030 && t.day_of_week == 5 && t.day <= 7 &&
+         IsMinuteInWindow(nowMinute, us0830 - preMin, us0830 + postMin))
+         return "新闻过滤:非农20:30";
+
+      if(InpUseFomcNightBlock)
+        {
+         int startM = InpFomcBlockStartHour * 60 + InpFomcBlockStartMinute;
+         int endM = InpFomcBlockEndHour * 60 + InpFomcBlockEndMinute;
+         if(IsMinuteInWindow(nowMinute, startM, endM))
+            return "新闻过滤:FOMC";
+        }
+     }
+
+   if(InpUseManualNewsBlock)
+     {
+      int startM = InpNewsBlockStartHour * 60 + InpNewsBlockStartMinute;
+      int endM = InpNewsBlockEndHour * 60 + InpNewsBlockEndMinute;
+      if(IsMinuteInWindow(nowMinute, startM, endM))
+         return "新闻过滤:自定义窗口";
+     }
+
+   return "";
+  }
+
+bool IsManualNewsBlocked()
+  {
+   return (GetNewsBlockReason() != "");
   }
 
 bool IsSpreadTooHigh()
@@ -2721,7 +2831,7 @@ string GetBlockingReason()
    if(IsSpreadTooHigh())
       return "点差过大";
    if(IsManualNewsBlocked())
-      return StringFormat("定时休市(%d-%d时)", InpNewsBlockStartHour, InpNewsBlockEndHour);
+      return GetNewsBlockReason();
    if(g_fastLossLocked)
       return "快速亏损熔断";
    return "";
@@ -3780,7 +3890,10 @@ void UpdateStatusPanel()
       // 篮子TP（动态：查表每层独立随机增量序列）
       int dispLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
       double dynamicTP = GetDynamicTP(dispLayers);
+      double tpFactor = GetDeepProtectTPFactor(dispLayers);
       string tpText = (InpMartBasketTP_USD <= 0.0) ? "不限制" : StringFormat("%.0f美分", dynamicTP);
+      if(InpMartBasketTP_USD > 0.0 && tpFactor < 0.999)
+         tpText += StringFormat("/守护%.0f%%", tpFactor * 100.0);
       // 硬止损
       string slText = (InpMartHardSL_USD <= 0.0) ? "不限制" : StringFormat("%.0f美分", InpMartHardSL_USD);
       // 追踪门槛（动态：TP×百分比）
