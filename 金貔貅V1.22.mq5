@@ -2551,25 +2551,9 @@ void ManageHedgeLock()
       return;
      }
 
-   // 根据触发模式判断是否启动对冲
+   // 根据当前对冲模式计算目标比例，固定/阶梯模式互斥由 GetHedgeTargetRatio 统一处理。
    double targetRatio = GetHedgeTargetRatio(floatingPnl);
-   bool triggerHedge = false;
    if(floatingPnl >= 0.0) return;  // 没有浮亏不触发
-
-   if(false && InpHedgeTriggerMode == HEDGE_BY_EQUITY_PCT)
-     {
-      double eq = AccountInfoDouble(ACCOUNT_EQUITY);
-      if(eq <= 0.0) return;
-      // 分母用亏损前的绝对权益(equity + |floatingPnl|), 而不是已被浮亏拉低的当前权益
-      double absEquity = eq - floatingPnl;  // floatingPnl为负, 所以eq - (-loss) = eq + loss
-      if(absEquity <= 0.0) return;
-      double lossPct = (-floatingPnl) / absEquity * 100.0;
-      triggerHedge = (lossPct >= InpHedgeLossPercent);
-     }
-   else // HEDGE_BY_ABSOLUTE
-     {
-      triggerHedge = ((-floatingPnl) >= InpHedgeAbsoluteUSD);
-     }
 
    if(targetRatio > 0.0)
      {
@@ -3778,7 +3762,9 @@ void UpdateStatusPanel()
          dayDd, g_todayMaxDDPct, curLossPct);
       if(InpHedgeMode != HEDGE_MODE_OFF && !g_hedgeActive)
         {
-         if(InpHedgeTriggerMode == HEDGE_BY_EQUITY_PCT)
+         if(InpHedgeMode == HEDGE_MODE_LADDER)
+            line2Text += StringFormat("  对冲阶梯:%.0f/%.0f/%.0f美分", InpHedgeLadderLoss1, InpHedgeLadderLoss2, InpHedgeLadderLoss3);
+         else if(InpHedgeTriggerMode == HEDGE_BY_EQUITY_PCT)
             line2Text += StringFormat("  对冲需:%.1f%%", InpHedgeLossPercent);
          else
             line2Text += StringFormat("  对冲需:%.0f美分", InpHedgeAbsoluteUSD);
