@@ -1,7 +1,7 @@
 # AGENTS.md — 金貔貅 EA 项目上下文
 
 > 本文件供 Codex / Claude / Qoder 等 AI 编程助手快速理解项目背景。
-> 最后更新：2026-05-30，对应版本 V1.19。
+> 最后更新：2026-05-30，对应版本 V1.22。
 
 ---
 
@@ -15,7 +15,7 @@
 - **多实例并行**：支持单机同时挂载 20 个 MT5 客户端运行同一 EA，需通过参数随机偏移避免共振爆仓
 
 **配套系统：**
-1. **MT5 EA 主程序**（MQL5）：金貔貅V1.19.mq5
+1. **MT5 EA 主程序**（MQL5）：金貔貅V1.22.mq5
 2. **授权工具**（Python + Tkinter，PyInstaller 打包为 EXE）：金貔貅授权工具.exe
 3. **PHP 后台**（PHP + MySQL）：授权码生成、管理后台
 
@@ -92,10 +92,21 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 
 ### 4.3 对冲机制
 
-**触发模式（二选一）：**
-- 权益百分比模式：浮亏达权益的 40% 触发
-- 绝对金额模式：浮亏达 10000 美分（$100）触发
+**V1.22 重构**：原 `InpEnableHedge`(总开关) + `InpUseHedgeLadder`(算法选择) 两个 bool 合并为单一枚举 `InpHedgeMode`：
+- `HEDGE_MODE_OFF`：完全关闭对冲（默认值，保持兼容）
+- `HEDGE_MODE_FIXED`：固定比例（走传统二选一触发：权益% 或 绝对金额）
+- `HEDGE_MODE_LADDER`：浮亏阶梯对冲（推荐）
+
+**固定模式触发方式（HEDGE_MODE_FIXED 时生效）：**
+- 权益百分比：浮亏达权益的 40% 触发
+- 绝对金额：浮亏达 10000 美分（$100）触发
 - 注意：变量名 `InpHedgeAbsoluteUSD` 但单位实际是账户本币（美分账户即美分）
+
+**浮亏阶梯对冲（HEDGE_MODE_LADDER 时生效）：**
+- 浮亏 1800 美分：目标对冲比例 0.6
+- 浮亏 2600 美分：目标对冲比例 0.7
+- 浮亏 3800 美分：目标对冲比例 0.8
+- 阶梯比例为目标总对冲比例，只补足差额，不重复叠加。
 
 **对冲比例风险分级：**
 | 比例 | 性质 | 推荐 |
@@ -137,7 +148,14 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 
 **与对冲机制独立**：两者触发条件不同，可叠加发生
 
-### 4.5 风控分支统一性（重要！）
+### 4.5 ATR扩张暂停加仓（V1.21）
+
+- 复用马丁加仓间距 ATR 句柄：短 ATR=3，长 ATR=6
+- `ATR短 / ATR长 >= 1.6`：暂停加仓
+- `ATR短 / ATR长 <= 1.3`：恢复加仓
+- 只影响 `TryMartAddLayer()`，不影响熔断、止盈、止损、追踪、对冲。
+
+### 4.6 风控分支统一性（重要！）
 
 OnTick 中以下三个提前 return 分支**必须**完整调用对冲管理三件套：
 1. 快速熔断锁定分支
@@ -150,16 +168,16 @@ ManageHedgeLock();        // 允许对冲激活/追加
 ManageHedgeRelease();     // 对冲止盈
 ```
 
-### 4.6 日截止时间（V1.19 已统一）
+### 4.7 日截止时间（V1.20 已统一）
 
 **统一为北京时间 00:00**：
 - 日盈亏统计区间：北京 00:00:00 ~ 当前
 - 日状态重置（ResetDailyState）：按北京时间日键
 - 历史明细 CSV 日期归属：按北京时间（V1.19 修复）
 
-实现方式：通过 `GetChinaNow()` 函数（基于 `TimeGMT() + InpChinaUtcOffsetHours*3600`）
+实现方式：通过 `GetChinaNow()` 函数（自动模式基于 `TimeGMT() + InpChinaUtcOffsetHours*3600`；手动模式为 `TimeCurrent() - InpServerUtcOffsetHours*3600 + InpChinaUtcOffsetHours*3600`）
 
-### 4.7 多账户参数随机偏移（防共振）
+### 4.8 多账户参数随机偏移（防共振）
 
 `ApplyAccountOffsets()` 对以下参数注入基于账户ID的偏移：
 - `g_effATRCoeff`：±15%
@@ -176,7 +194,10 @@ ManageHedgeRelease();     // 对冲止盈
 |------|--------|------|
 | `InpMartATRSpacingCoeff` | 0.15~0.20 | 5位精度推荐 0.20，6位精度 0.30 |
 | `InpMartBasketTPPerLayer` | 8 美分 | 每层 TP 增量基础值 |
-| `InpHedgeRatio` | 0.7 | 对冲比例 |
+| `InpHedgeMode` | HEDGE_MODE_OFF | 对冲模式（OFF/FIXED/LADDER），V1.22 新增 |
+| `InpHedgeRatio` | 0.5 | [固定模式]对冲手数比例 |
+| `InpHedgeLadderLoss1/2/3` | 1800 / 2600 / 3800 | 阶梯对冲浮亏阈值（美分） |
+| `InpHedgeLadderRatio1/2/3` | 0.6 / 0.7 / 0.8 | 阶梯目标对冲比例 |
 | `InpHedgeAbsoluteUSD` | 10000 美分 | 对冲触发浮亏（黄金建议 5000）|
 | `InpHedgeReleaseFixed` | 200 美分 | 对冲解锁阈值（黄金建议 300~500）|
 | `InpFastLossDistance` | 800 美分 | 5min 内反向 $8 |
@@ -195,8 +216,8 @@ ManageHedgeRelease();     // 对冲止盈
 **MetaEditor 命令行编译**（PowerShell）：
 ```powershell
 & "C:\Program Files\MetaTrader 5\MetaEditor64.exe" `
-  /compile:"c:\Users\Administrator\Desktop\源码\金貔貅V1.19.mq5" `
-  /log:"c:\Users\Administrator\Desktop\源码\金貔貅V1.19.log"
+  /compile:"c:\Users\Administrator\Desktop\源码\金貔貅V1.22.mq5" `
+  /log:"c:\Users\Administrator\Desktop\源码\金貔貅V1.22.log"
 ```
 
 **注意事项**：
