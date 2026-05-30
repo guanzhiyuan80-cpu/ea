@@ -313,11 +313,6 @@ input int              InpNewsDataHour           = 20;                        //
 input int              InpNewsDataMinute         = 30;                        // ▶ 美国08:30数据对应北京时间分钟
 input int              InpNewsBlockPreMinutes    = 10;                        // ▶ 新闻前禁开分钟
 input int              InpNewsBlockPostMinutes   = 40;                        // ▶ 新闻后禁开分钟
-input bool             InpUseFomcNightBlock      = false;                     // ▶ 手动启用FOMC夜间窗口
-input int              InpFomcBlockStartHour     = 1;                         // ▶ FOMC窗口开始(北京时间小时)
-input int              InpFomcBlockStartMinute   = 50;                        // ▶ FOMC窗口开始(分钟)
-input int              InpFomcBlockEndHour       = 3;                         // ▶ FOMC窗口结束(北京时间小时)
-input int              InpFomcBlockEndMinute     = 10;                        // ▶ FOMC窗口结束(分钟)
 input bool             InpUseManualNewsBlock     = DEF_USE_NEWS_BLOCK;        // ▶ 启用自定义新闻窗口
 input int              InpNewsBlockStartHour     = DEF_NEWS_BLOCK_START;      // ▶ 自定义窗口开始(北京时间小时)
 input int              InpNewsBlockStartMinute   = 20;                        // ▶ 自定义窗口开始(分钟)
@@ -2126,13 +2121,6 @@ string GetNewsBlockReason()
          IsMinuteInWindow(nowMinute, us0830 - preMin, us0830 + postMin))
          return "新闻过滤:非农20:30";
 
-      if(InpUseFomcNightBlock)
-        {
-         int startM = InpFomcBlockStartHour * 60 + InpFomcBlockStartMinute;
-         int endM = InpFomcBlockEndHour * 60 + InpFomcBlockEndMinute;
-         if(IsMinuteInWindow(nowMinute, startM, endM))
-            return "新闻过滤:FOMC";
-        }
      }
 
    if(InpUseManualNewsBlock)
