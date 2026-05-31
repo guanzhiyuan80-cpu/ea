@@ -1,0 +1,55 @@
+; === 基础设置 ===
+InpPresetName=稳貔貅EUR轻网格
+InpMagicNumber=26053101
+InpTradeSymbol=EURUSDc
+; === 时间与新闻过滤（北京时间） ===
+InpChinaUtcOffsetHours=8
+InpEnableNewsFilter=true
+InpNewsBlockThu2030=true
+InpNewsBlockFirstFri2030=true
+InpAutoUsDstNewsTime=true
+InpNewsDataHour=20
+InpNewsDataMinute=30
+InpNewsBlockPreMinutes=10
+InpNewsBlockPostMinutes=40
+InpUseManualNewsBlock=false
+InpNewsBlockStartHour=20
+InpNewsBlockStartMinute=20
+InpNewsBlockEndHour=21
+InpNewsBlockEndMinute=10
+InpTradeStartHour=7
+InpTradeEndHour=23
+; === 风控 ===
+InpMaxSpreadPoints=35
+InpMaxDailyLossPercent=20.0
+InpBasketHardSL=800.0
+InpCooldownSec=300
+; === 轻网格 ===
+InpBaseLot=0.01
+InpUseEquityLot=false
+InpLotPer1000Equity=0.01
+InpLotMultiplier=1.05
+InpMaxLayers=6
+InpMaxTotalLots=0.20
+InpATRSpacingMult=0.65
+InpMinSpacingPoints=120
+InpBasketTP=120.0
+InpBasketTPPerLayer=35.0
+; === 入场过滤 ===
+InpTrendTF=16385
+InpEntryTF=15
+InpEmaFast=50
+InpEmaSlow=200
+InpEntryEma=20
+InpATRPeriod=14
+InpADXPeriod=14
+InpMaxADX=28.0
+InpRSIPeriod=14
+InpBuyRsiMin=38.0
+InpBuyRsiMax=62.0
+InpSellRsiMin=38.0
+InpSellRsiMax=62.0
+; === 面板 ===
+InpShowPanel=true
+InpPanelX=8
+InpPanelY=20
