@@ -3907,9 +3907,12 @@ void UpdateStatusPanel()
       string dailyLossInfo = "";
       if(InpMaxDailyLossPercent > 0.0)
          dailyLossInfo = StringFormat("  日亏:%.2f%%(>%.0f%%)", dailyLossPct, InpMaxDailyLossPercent);
+      string chaseInfo = StringFormat("  防追:%.1f/%.1f %.1f/%.1f",
+         g_sigEntryDistSlowAtr, InpEntryMaxDistSlowEMA_ATR,
+         g_sigEntryBodyAtr, InpEntryMaxPrevBody_ATR);
       ObjectSetString(0, OBJ_LINE1, OBJPROP_TEXT,
-         StringFormat("权益:%.0f  余额:%.0f%s  日锁:%s  SL:%s  熔:%s",
-            eq, bal, dailyLossInfo, riskDaily, riskHardSL, riskFast));
+         StringFormat("权益:%.0f  余额:%.0f%s  日锁:%s  SL:%s  熔:%s%s",
+            eq, bal, dailyLossInfo, riskDaily, riskHardSL, riskFast, chaseInfo));
       color riskColor = C'140,155,180';
       if(g_dailyLocked || g_martHardSLLocked || g_fastLossLocked) riskColor = C'255,80,80';
       ObjectSetInteger(0, OBJ_LINE1, OBJPROP_COLOR, riskColor);
@@ -4127,10 +4130,8 @@ void UpdateStatusPanel()
             totalText += StringFormat(" CCI实时:%+d/±%d", (int)MathRound(cciVal[0]), InpSMC_CCIExtreme);
         }
       // 账户偏移后的实际生效参数(ATR系数/基准间距/篮子止盈) → 独立 Label，避开综合行 63字符上限
-      string offsetText = StringFormat("[偏移%.3f 间距%.0f TP%.1f 防追%.1f/%.1f %.1f/%.1f]",
-         g_effATRCoeff, g_effBaseSpacing, g_effBasketTP,
-         g_sigEntryDistSlowAtr, InpEntryMaxDistSlowEMA_ATR,
-         g_sigEntryBodyAtr, InpEntryMaxPrevBody_ATR);
+      string offsetText = StringFormat("[偏移%.3f 间距%.0f TP%.1f]",
+         g_effATRCoeff, g_effBaseSpacing, g_effBasketTP);
       ObjectSetString(0, OBJ_SMC_OFFSET, OBJPROP_TEXT, offsetText);
       ObjectSetString(0, OBJ_SMC_TOTAL, OBJPROP_TEXT, totalText);
       ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_COLOR, bestScore >= InpSMCScoreThreshold ? C'80,200,120' : C'140,155,180');
