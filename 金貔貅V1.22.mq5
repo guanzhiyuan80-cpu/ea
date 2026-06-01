@@ -368,7 +368,7 @@ input bool             InpUseEntryChaseFilter    = true;                      //
 input double           InpEntryMaxDistSlowEMA_ATR = 2.0;                      // ▶ 距慢EMA超过N倍ATR不追
 input double           InpEntryMaxPrevBody_ATR   = 2.2;                       // ▶ 上根K实体超过N倍ATR不追
 
-input group "============================== SMC智能资金入场 =============================="
+input group "=== SMC智能资金入场 ==="
 input ENUM_ENTRY_MODE InpEntryMode              = DEF_ENTRY_MODE;            // ▶ 入场模式(仅EMA/仅SMC/综合评分)
 input int             InpSMCScoreThreshold      = DEF_SMC_SCORE_THRESHOLD;   // ▶ 综合评分入场阈值(0-100)
 input group "--- 大周期方向(4H) ---"
@@ -872,7 +872,7 @@ double GetDynamicTP(int layers)
 
    double factor = GetDeepProtectTPFactor(layers);
    double guardedTP = rawTP * factor;
-   if(InpDeepTPMinProfit > 0.0)
+   if(factor < 0.999 && InpDeepTPMinProfit > 0.0)
       guardedTP = MathMax(guardedTP, InpDeepTPMinProfit);
    return guardedTP;
 }
