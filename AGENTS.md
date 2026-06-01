@@ -197,7 +197,14 @@ ManageHedgeRelease();     // 对冲止盈
 
 实现方式：通过 `GetChinaNow()` 函数（自动模式基于 `TimeGMT() + InpChinaUtcOffsetHours*3600`；手动模式为 `TimeCurrent() - InpServerUtcOffsetHours*3600 + InpChinaUtcOffsetHours*3600`）
 
-### 4.9 多账户参数随机偏移（防共振）
+### 4.9 首单防追
+
+- `InpUseEntryChaseFilter=true` 默认启用，仅影响首单，不影响已有篮子加层。
+- `InpEntryMaxDistSlowEMA_ATR=3.0`：上一根入场周期 K 线收盘价距离慢 EMA 超过 3 倍 ATR 时不追。
+- `InpEntryMaxPrevBody_ATR=3.0`：上一根入场周期 K 线实体超过 3 倍 ATR 时不追。
+- 面板偏移行显示 `防追 距慢EMA/阈值 实体/阈值`，例如 `防追2.1/3.0 0.8/3.0`。
+
+### 4.10 多账户参数随机偏移（防共振）
 
 `ApplyAccountOffsets()` 对以下参数注入基于账户ID的偏移：
 - `g_effATRCoeff`：±15%

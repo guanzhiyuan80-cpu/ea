@@ -365,8 +365,8 @@ input ENUM_H4_FILTER_MODE InpMartH4FilterMode  = DEF_MART_H4_FILTER_MODE;   // �
 input int              InpMartStartHour          = DEF_MART_START_HOUR;       // ▶ 每天几点开始交易(0=全天)
 input int              InpMartEndHour            = DEF_MART_END_HOUR;         // ▶ 每天几点停止交易(0=全天)
 input bool             InpUseEntryChaseFilter    = true;                      // ▶ 首单防追高追低
-input double           InpEntryMaxDistSlowEMA_ATR = 2.0;                      // ▶ 距慢EMA超过N倍ATR不追
-input double           InpEntryMaxPrevBody_ATR   = 2.2;                       // ▶ 上根K实体超过N倍ATR不追
+input double           InpEntryMaxDistSlowEMA_ATR = 3.0;                      // ▶ 距慢EMA超过N倍ATR不追
+input double           InpEntryMaxPrevBody_ATR   = 3.0;                       // ▶ 上根K实体超过N倍ATR不追
 
 input group "=== SMC智能资金入场 ==="
 input ENUM_ENTRY_MODE InpEntryMode              = DEF_ENTRY_MODE;            // ▶ 入场模式(仅EMA/仅SMC/综合评分)
@@ -606,6 +606,8 @@ bool   g_sigH4Confirmed     = false;
 double g_sigH4EmaVal        = 0.0;
 int    g_sigMartDistToNext  = 0;       // points to next layer trigger
 double g_sigMartBasketPnL   = 0.0;     // current basket floating PnL
+double g_sigEntryDistSlowAtr = 0.0;     // 首单防追: 收盘价距慢EMA的ATR倍数
+double g_sigEntryBodyAtr     = 0.0;     // 首单防追: 上根K实体ATR倍数
 
 // SMC signal cache
 int    g_smcDirection       = 0;       // 1=看涨, -1=看跌, 0=中立
@@ -2497,24 +2499,25 @@ bool IsEntryChaseBlocked(const ENUM_POSITION_TYPE side)
    if(close1 <= 0.0 || open1 <= 0.0 || slow[0] <= 0.0)
       return false;
 
+   g_sigEntryDistSlowAtr = MathAbs(close1 - slow[0]) / atr;
+   g_sigEntryBodyAtr = MathAbs(close1 - open1) / atr;
+
    if(InpEntryMaxDistSlowEMA_ATR > 0.0)
      {
-      double distAtr = MathAbs(close1 - slow[0]) / atr;
       bool chaseLong  = (side == POSITION_TYPE_BUY  && close1 > slow[0]);
       bool chaseShort = (side == POSITION_TYPE_SELL && close1 < slow[0]);
-      if((chaseLong || chaseShort) && distAtr > InpEntryMaxDistSlowEMA_ATR)
+      if((chaseLong || chaseShort) && g_sigEntryDistSlowAtr > InpEntryMaxDistSlowEMA_ATR)
         {
-         g_noEntryReason = StringFormat("防追单: 距慢EMA %.1fATR>%.1f", distAtr, InpEntryMaxDistSlowEMA_ATR);
+         g_noEntryReason = StringFormat("防追单: 距慢EMA %.1fATR>%.1f", g_sigEntryDistSlowAtr, InpEntryMaxDistSlowEMA_ATR);
          return true;
         }
      }
 
    if(InpEntryMaxPrevBody_ATR > 0.0)
      {
-      double bodyAtr = MathAbs(close1 - open1) / atr;
-      if(bodyAtr > InpEntryMaxPrevBody_ATR)
+      if(g_sigEntryBodyAtr > InpEntryMaxPrevBody_ATR)
         {
-         g_noEntryReason = StringFormat("防追单: 上根实体 %.1fATR>%.1f", bodyAtr, InpEntryMaxPrevBody_ATR);
+         g_noEntryReason = StringFormat("防追单: 上根实体 %.1fATR>%.1f", g_sigEntryBodyAtr, InpEntryMaxPrevBody_ATR);
          return true;
         }
      }
@@ -2768,6 +2771,8 @@ void ComputeSignalDiagnostics()
    g_sigH4EmaVal       = 0.0;
    g_sigMartDistToNext = 0;
    g_sigMartBasketPnL  = g_cachedMartPnl;
+   g_sigEntryDistSlowAtr = 0.0;
+   g_sigEntryBodyAtr     = 0.0;
 
    // Read EMA values and compute signal inline (avoids duplicate GetMartSignal call)
    double emaFast[3], emaSlow[3];
@@ -2791,6 +2796,14 @@ void ComputeSignalDiagnostics()
          int passTh = (int)MathRound(InpSMCWeightEMA * 2.0 / 3.0);
          g_sigMartEntryOk = ((g_sigMartEmaScoreLong  > 0 && g_sigMartEmaScoreLong  >= passTh) ||
                              (g_sigMartEmaScoreShort > 0 && g_sigMartEmaScoreShort >= passTh));
+
+         double atr = GetATRValue(g_hATR_Spacing);
+         double open1 = iOpen(_Symbol, InpMartEntryTF, 1);
+         if(atr > 0.0 && open1 > 0.0 && emaSlow[1] > 0.0)
+           {
+            g_sigEntryDistSlowAtr = MathAbs(close1 - emaSlow[1]) / atr;
+            g_sigEntryBodyAtr = MathAbs(close1 - open1) / atr;
+           }
         }
      }
 
@@ -4114,7 +4127,10 @@ void UpdateStatusPanel()
             totalText += StringFormat(" CCI实时:%+d/±%d", (int)MathRound(cciVal[0]), InpSMC_CCIExtreme);
         }
       // 账户偏移后的实际生效参数(ATR系数/基准间距/篮子止盈) → 独立 Label，避开综合行 63字符上限
-      string offsetText = StringFormat("[偏移%.3f 间距%.0f TP%.1f]", g_effATRCoeff, g_effBaseSpacing, g_effBasketTP);
+      string offsetText = StringFormat("[偏移%.3f 间距%.0f TP%.1f 防追%.1f/%.1f %.1f/%.1f]",
+         g_effATRCoeff, g_effBaseSpacing, g_effBasketTP,
+         g_sigEntryDistSlowAtr, InpEntryMaxDistSlowEMA_ATR,
+         g_sigEntryBodyAtr, InpEntryMaxPrevBody_ATR);
       ObjectSetString(0, OBJ_SMC_OFFSET, OBJPROP_TEXT, offsetText);
       ObjectSetString(0, OBJ_SMC_TOTAL, OBJPROP_TEXT, totalText);
       ObjectSetInteger(0, OBJ_SMC_TOTAL, OBJPROP_COLOR, bestScore >= InpSMCScoreThreshold ? C'80,200,120' : C'140,155,180');

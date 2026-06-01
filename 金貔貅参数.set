@@ -61,8 +61,8 @@ InpMartUseH4Filter=false
 InpMartStartHour=0
 InpMartEndHour=0
 InpUseEntryChaseFilter=true
-InpEntryMaxDistSlowEMA_ATR=2.0
-InpEntryMaxPrevBody_ATR=2.2
+InpEntryMaxDistSlowEMA_ATR=3.0
+InpEntryMaxPrevBody_ATR=3.0
 ; ============================== SMC智能资金入场 ======================
 InpEntryMode=2
 InpSMCScoreThreshold=30
