@@ -3760,7 +3760,9 @@ void UpdateStatusPanel()
    double bal = AccountInfoDouble(ACCOUNT_BALANCE);
    double dayDd = GetTodayMaxDrawdown();
    double spread = GetCurrentSpreadPoints();
-   double floatingPnl = GetEffectivePnL();
+   double martPnl = g_cachedMartPnl;
+   double hedgePnl = g_hedgeActive ? g_hedgePnl : 0.0;
+   double effectivePnl = martPnl + hedgePnl;
 
    // Account type detection
    string acctCurrency = AccountInfoString(ACCOUNT_CURRENCY);
@@ -3805,9 +3807,9 @@ void UpdateStatusPanel()
 
    // --- Card 1: Basket PnL ---
    ObjectSetString(0, OBJ_CARD1_T, OBJPROP_TEXT, g_hedgeActive ? "总浮盈" : "篮子浮盈");
-   string pnlText = StringFormat("%+.2f", floatingPnl);
+   string pnlText = StringFormat("%+.2f", effectivePnl);
    ObjectSetString(0, OBJ_CARD1_V, OBJPROP_TEXT, pnlText);
-   ObjectSetInteger(0, OBJ_CARD1_V, OBJPROP_COLOR, floatingPnl >= 0 ? C'80,200,120' : C'255,80,80');
+   ObjectSetInteger(0, OBJ_CARD1_V, OBJPROP_COLOR, effectivePnl >= 0 ? C'80,200,120' : C'255,80,80');
    color pnlColor = (g_dayRealizedPnl >= 0) ? C'0,200,120' : C'255,80,80';
    ObjectSetInteger(0, OBJ_CARD1_S, OBJPROP_COLOR, pnlColor);
    ObjectSetString(0, OBJ_CARD1_S, OBJPROP_TEXT, StringFormat("当日已平: %.2f", g_dayRealizedPnl));
@@ -3822,7 +3824,7 @@ void UpdateStatusPanel()
    int tpLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
    double dynamicTPPanel = GetDynamicTP(tpLayers);
    if(dynamicTPPanel > 0.0)
-      tpPct = MathMin(100.0, MathMax(0.0, floatingPnl / dynamicTPPanel * 100.0));
+      tpPct = MathMin(100.0, MathMax(0.0, effectivePnl / dynamicTPPanel * 100.0));
    ObjectSetString(0, OBJ_CARD3_T, OBJPROP_TEXT, "TP进度");
    ObjectSetString(0, OBJ_CARD3_V, OBJPROP_TEXT, StringFormat("%.1f%%", tpPct));
    ObjectSetInteger(0, OBJ_CARD3_V, OBJPROP_COLOR, tpPct >= 75.0 ? C'80,200,120' : C'224,231,255');
@@ -3858,18 +3860,18 @@ void UpdateStatusPanel()
    else
       distText = StringFormat("%d|%.0f", g_sigMartDistToNext, curSpacing);  // 剩余距离/当前间距
 
-   double modulePnlNow = g_dayRealizedPnl + floatingPnl;
+   double modulePnlNow = g_dayRealizedPnl + effectivePnl;
    double deltaPnl = modulePnlNow - g_dayStartModulePnl;
    double dailyLossPct = 0.0;
    if(eq > 0.0 && deltaPnl < 0.0)
       dailyLossPct = (-deltaPnl) / eq * 100.0;
 
    double curLossPct = 0.0;
-   if(eq > 0.0 && floatingPnl < 0.0)
+   if(eq > 0.0 && effectivePnl < 0.0)
      {
-      double absEquity = eq - floatingPnl;
+      double absEquity = eq - effectivePnl;
       if(absEquity > 0.0)
-         curLossPct = (-floatingPnl) / absEquity * 100.0;
+         curLossPct = (-effectivePnl) / absEquity * 100.0;
      }
 
    string riskDaily = g_dailyLocked ? "锁定" : "正常";
@@ -4024,11 +4026,11 @@ void UpdateStatusPanel()
          hedgeText = StringFormat("对冲: 已关闭  比例:%.0f%%(%.2f手)  [权益%%:%.1f%%  绝对:%.0f美分]", panelHedgeRatio*100, targetHedgeLot, InpHedgeLossPercent, InpHedgeAbsoluteUSD);
       else if(g_hedgeActive)
         {
-         double totalPnl = floatingPnl + g_hedgePnl;
+         double totalPnl = effectivePnl;
          int dispEffLayers = (g_martLayerCount > 0) ? g_martLayerCount : 1;
          double releaseThreshold = (InpHedgeReleaseMode == HEDGE_RELEASE_FIXED) ? InpHedgeReleaseFixed : dispEffLayers * InpHedgeReleaseDynPerLayer;
          hedgeText = StringFormat("对冲: 激活中  总浮盈:%.1f(止盈>%.0f)  马丁:%.1f  对冲:%.1f  单数:%d  手数:%.2f",
-            totalPnl, releaseThreshold, floatingPnl, g_hedgePnl, g_hedgeCount, g_hedgeLots);
+            totalPnl, releaseThreshold, martPnl, hedgePnl, g_hedgeCount, g_hedgeLots);
         }
       else
         {
