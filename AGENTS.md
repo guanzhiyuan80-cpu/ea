@@ -1,7 +1,7 @@
 # AGENTS.md — 金貔貅 EA 项目上下文
 
 > 本文件供 Codex / Claude / Qoder 等 AI 编程助手快速理解项目背景。
-> 最后更新：2026-05-30，对应版本 V1.22。
+> 最后更新：2026-06-02，对应版本 V1.23。
 
 ---
 
@@ -15,7 +15,7 @@
 - **多实例并行**：支持单机同时挂载 20 个 MT5 客户端运行同一 EA，需通过参数随机偏移避免共振爆仓
 
 **配套系统：**
-1. **MT5 EA 主程序**（MQL5）：金貔貅V1.22.mq5
+1. **MT5 EA 主程序**（MQL5）：金貔貅V1.23.mq5
 2. **授权工具**（Python + Tkinter，PyInstaller 打包为 EXE）：金貔貅授权工具.exe
 3. **PHP 后台**（PHP + MySQL）：授权码生成、管理后台
 
@@ -148,12 +148,13 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 **触发条件**：单位时间内价格向不利方向变动达阈值
 - `InpFastLossDistance`：单位**美分**，800 = $8 反向价幅
 - `InpFastLossTime`：300 秒（5 分钟）窗口
-- `InpFastLossRecoveryDistance`：400 美分回调解锁
+- `InpFastLossRecoveryDistance`：500 美分，熔断后从极端点反弹/回落达到该距离即可解锁
 
 **触发后行为**：
 - **仅锁定新开仓与加层**，保留已有仓位等回调（不全平）
 - 锁定期间继续运行：止盈、追踪、硬止损、对冲管理
-- 解锁条件：价格回到最后一层加仓价（多头取 `g_martLowestPrice`，空头取 `g_martHighestPrice`）
+- 解锁条件：价格回到最后一层加仓价，或熔断后从最不利极值点回撤达到 `InpFastLossRecoveryDistance`
+- 小亏脱身：若通过极值回撤解锁且总浮亏不超过 `InpFastLossExitMaxLoss`（默认 300 美分），则直接全平篮子并解除熔断
 - 守卫逻辑：篮子全平时（`g_martDirection == NONE`）自动解锁
 
 **与对冲机制独立**：两者触发条件不同，可叠加发生
@@ -237,7 +238,8 @@ ManageHedgeRelease();     // 对冲止盈
 | `InpHedgeReleaseFixed` | 200 美分 | 对冲解锁阈值（黄金建议 300~500）|
 | `InpFastLossDistance` | 800 美分 | 5min 内反向 $8 |
 | `InpFastLossTime` | 300 秒 | 熔断窗口 |
-| `InpFastLossRecoveryDistance` | 400 美分 | 熔断解锁 |
+| `InpFastLossRecoveryDistance` | 500 美分 | 熔断后极值回撤解锁 |
+| `InpFastLossExitMaxLoss` | 300 美分 | 回撤解锁时小亏以内全平，0=关闭 |
 | `InpMaxDailyLossPercent` | 40.0 | 日亏锁定阈值 |
 | `InpChinaUtcOffsetHours` | 8 | 北京时区 |
 | `InpAutoServerUtcOffset` | true | 自动检测服务器时区 |
@@ -251,7 +253,7 @@ ManageHedgeRelease();     // 对冲止盈
 **MetaEditor 命令行编译**（PowerShell）：
 ```powershell
 & "C:\Program Files\MetaTrader 5\MetaEditor64.exe" `
-  /compile:"c:\Users\Administrator\Desktop\源码\金貔貅V1.22.mq5" `
+  /compile:"c:\Users\Administrator\Desktop\源码\金貔貅V1.23.mq5" `
   /log:"c:\Users\Administrator\Desktop\源码\金貔貅V1.22.log"
 ```
 
