@@ -1,7 +1,7 @@
 # AGENTS.md — 金貔貅 EA 项目上下文
 
 > 本文件供 Codex / Claude / Qoder 等 AI 编程助手快速理解项目背景。
-> 最后更新：2026-06-02，对应版本 V1.23。
+> 最后更新：2026-06-03，对应版本 V1.24。
 
 ---
 
@@ -15,7 +15,7 @@
 - **多实例并行**：支持单机同时挂载 20 个 MT5 客户端运行同一 EA，需通过参数随机偏移避免共振爆仓
 
 **配套系统：**
-1. **MT5 EA 主程序**（MQL5）：金貔貅V1.23.mq5
+1. **MT5 EA 主程序**（MQL5）：金貔貅V1.24.mq5
 2. **授权工具**（Python + Tkinter，PyInstaller 打包为 EXE）：金貔貅授权工具.exe
 3. **PHP 后台**（PHP + MySQL）：授权码生成、管理后台
 
@@ -141,6 +141,14 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 - `马丁`：仅统计马丁篮子浮盈（`g_cachedMartPnl`）
 - `对冲`：仅统计对冲单浮盈（`g_hedgePnl`），禁止在总浮盈中重复相加
 
+**轮转锁仓篮子（V1.24，可选开关）**：
+- 开关：`InpEnableBasketRotation`，默认关闭；开启后最多管理 5 个独立 Magic 篮子
+- 触发：当前活动篮子马丁浮亏达到 `InpRotateLockLoss`（默认 500 美分）
+- 动作：按 `InpRotateHedgeRatio`（默认 0.8）开反向锁仓单，旧篮子停止加层并冻结
+- 新篮子：切换到下一个 Magic（`InpMagicNumber + 序号 × InpRotateMagicStep`）并重新独立判断入场，不参考旧篮子方向/浮亏
+- 旧篮子退出：旧篮子马丁+锁仓总浮盈达到 `InpRotateCloseProfit`（默认 0）自动全平
+- 风险限制：最多 5 个篮子；无空篮子时不再继续轮转，面板提示`轮转篮子已满`
+
 **阶梯对冲设计（待实现）**：
 - 触发依据：**价格距离主仓均价**（不是浮亏美分数，因为浮亏增长会被首档对冲压缩）
 - 1档：价格偏离 ≥ $20 → 对冲 0.9 倍
@@ -258,8 +266,8 @@ ManageHedgeRelease();     // 对冲止盈
 **MetaEditor 命令行编译**（PowerShell）：
 ```powershell
 & "C:\Program Files\MetaTrader 5\MetaEditor64.exe" `
-  /compile:"c:\Users\Administrator\Desktop\源码\金貔貅V1.23.mq5" `
-  /log:"c:\Users\Administrator\Desktop\源码\金貔貅V1.22.log"
+  /compile:"c:\Users\Administrator\Desktop\源码\金貔貅V1.24.mq5" `
+  /log:"c:\Users\Administrator\Desktop\源码\金貔貅V1.24.log"
 ```
 
 **注意事项**：
