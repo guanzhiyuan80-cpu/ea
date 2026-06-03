@@ -2967,6 +2967,7 @@ void CheckFastLossBreaker()
 
 void ManageHedgeLock()
   {
+   if(InpEnableBasketRotation) return; // 轮转锁仓接管对冲，避免传统对冲先触发后阻断换篮子
    if(InpHedgeMode == HEDGE_MODE_OFF) return;
    if(InpHedgeMode == HEDGE_MODE_FIXED)
      {
@@ -3063,6 +3064,7 @@ void ManageHedgeLock()
 
 void ManageHedgeRelease()
   {
+   if(InpEnableBasketRotation) return; // 轮转旧篮子由 ManageFrozenRotationBaskets 按总浮盈退出
    if(InpHedgeMode == HEDGE_MODE_OFF) return;
    if(!g_hedgeActive) return;
 
@@ -4306,7 +4308,10 @@ void UpdateStatusPanel()
       if(panelHedgeRatio <= 0.0)
          panelHedgeRatio = useLadder ? InpHedgeLadderRatio1 : InpHedgeRatio;
       double targetHedgeLot = NormalizeVolume(g_martTotalLots * panelHedgeRatio);
-      if(InpHedgeMode == HEDGE_MODE_OFF)
+      if(InpEnableBasketRotation)
+         hedgeText = StringFormat("对冲: 轮转锁仓接管  当前篮子浮亏>%.0f美分锁%.0f%%  旧篮子浮盈>%.0f平仓",
+            InpRotateLockLoss, InpRotateHedgeRatio * 100.0, InpRotateCloseProfit);
+      else if(InpHedgeMode == HEDGE_MODE_OFF)
          hedgeText = StringFormat("对冲: 已关闭  比例:%.0f%%(%.2f手)  [权益%%:%.1f%%  绝对:%.0f美分]", panelHedgeRatio*100, targetHedgeLot, InpHedgeLossPercent, InpHedgeAbsoluteUSD);
       else if(g_hedgeActive)
         {
