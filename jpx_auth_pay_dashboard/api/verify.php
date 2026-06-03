@@ -5,11 +5,10 @@ $data = $_SERVER['REQUEST_METHOD'] === 'POST' ? read_json_body() : $_GET;
 if (!verify_ea_signature($data)) json_response(['authorized' => false, 'status' => 'bad_signature'], 403);
 
 $accountLogin = trim((string)($data['account_login'] ?? ''));
-$serverName = trim((string)($data['server'] ?? ''));
-if ($accountLogin === '' || $serverName === '') json_response(['authorized' => false, 'status' => 'missing_fields'], 400);
+if ($accountLogin === '') json_response(['authorized' => false, 'status' => 'missing_fields'], 400);
 
-$stmt = db()->prepare("SELECT * FROM accounts WHERE account_login = ? AND server_name = ? LIMIT 1");
-$stmt->execute([$accountLogin, $serverName]);
+$stmt = db()->prepare("SELECT * FROM accounts WHERE account_login = ? LIMIT 1");
+$stmt->execute([$accountLogin]);
 $account = $stmt->fetch();
 $authorized = false;
 $status = 'not_found';
@@ -26,9 +25,9 @@ if ($account) {
         $warning = $daysLeft <= EXPIRE_WARNING_DAYS;
         db()->prepare("UPDATE accounts SET last_heartbeat_at = NOW() WHERE id = ?")->execute([(int)$account['id']]);
     }
-    db()->prepare("INSERT INTO heartbeat_logs(account_id, account_login, server_name, authorized, ip_address)
-                   VALUES(?, ?, ?, ?, ?)")
-        ->execute([(int)$account['id'], $accountLogin, $serverName, $authorized ? 1 : 0, $_SERVER['REMOTE_ADDR'] ?? null]);
+    db()->prepare("INSERT INTO heartbeat_logs(account_id, account_login, authorized, ip_address)
+                   VALUES(?, ?, ?, ?)")
+        ->execute([(int)$account['id'], $accountLogin, $authorized ? 1 : 0, $_SERVER['REMOTE_ADDR'] ?? null]);
 }
 
 json_response([

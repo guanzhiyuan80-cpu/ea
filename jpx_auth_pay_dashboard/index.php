@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/business.php';
 try {
-    $stmt = db()->query("SELECT id, account_login, server_name, customer_name, expires_at, license_code IS NOT NULL AS has_license
+    $stmt = db()->query("SELECT id, account_login, customer_name, expires_at, license_code IS NOT NULL AS has_license
                          FROM accounts ORDER BY id DESC LIMIT 300");
     $accounts = $stmt->fetchAll();
 } catch (Throwable $e) {
@@ -25,13 +25,13 @@ try {
     <?php if (!empty($installError)): ?>
       <div class="alert danger">数据库尚未安装或连接失败：<?= h($installError) ?>。请先访问 <a href="install.php">install.php</a>。</div>
     <?php endif; ?>
-    <div class="toolbar"><div><label>搜索</label><input id="search" placeholder="账号 / 服务器 / 用户"></div></div>
+    <div class="toolbar"><div><label>搜索</label><input id="search" placeholder="账号 / 用户"></div></div>
     <table id="accountTable">
-      <thead><tr><th>用户</th><th>交易账号</th><th>服务器</th><th>状态</th><th>到期时间</th><th>操作</th></tr></thead>
+      <thead><tr><th>用户</th><th>交易账号</th><th>状态</th><th>到期时间</th><th>操作</th></tr></thead>
       <tbody>
       <?php foreach ($accounts as $a): $status = account_status($a['expires_at'], (bool)$a['has_license']); ?>
-        <tr data-text="<?= h($a['customer_name'] . ' ' . $a['account_login'] . ' ' . $a['server_name']) ?>">
-          <td><?= h($a['customer_name']) ?></td><td><?= h($a['account_login']) ?></td><td><?= h($a['server_name']) ?></td>
+        <tr data-text="<?= h($a['customer_name'] . ' ' . $a['account_login']) ?>">
+          <td><?= h($a['customer_name']) ?></td><td><?= h($a['account_login']) ?></td>
           <td><span class="status <?= h($status) ?>"><?= h($status) ?></span></td>
           <td><?= h($a['expires_at'] ?: '未付款') ?></td>
           <td><button class="btn primary" onclick="renew(<?= (int)$a['id'] ?>,'<?= h($a['account_login']) ?>')">扫码续费</button></td>

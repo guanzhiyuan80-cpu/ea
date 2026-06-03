@@ -14,8 +14,8 @@
 
 ## 核心规则
 
-- 管理员添加账号时填写：交易账号、服务器、用户、备注。
-- `交易账号 + 服务器` 唯一，重复添加会被拒绝。
+- 管理员添加账号时填写：交易账号、用户、备注。
+- `交易账号` 唯一，重复添加会被拒绝。
 - 新账号默认不生成授权码。
 - 游客可以查看账号续费列表并扫码支付。
 - 每次支付 200 元，自动延期 1 个月。
@@ -48,7 +48,6 @@ return [
 ```json
 {
   "account_login": "123456",
-  "server": "Broker-Server",
   "timestamp": "2026-06-04 12:00:00",
   "signature": "可选HMAC"
 }
@@ -65,7 +64,7 @@ return [
 如果启用签名，请在 `config/config.php` 修改 `API_SHARED_SECRET`，签名算法：
 
 ```text
-HMAC_SHA256(account_login|server|timestamp, API_SHARED_SECRET)
+HMAC_SHA256(account_login|timestamp, API_SHARED_SECRET)
 ```
 
 ## EA 盈亏上报
@@ -77,7 +76,6 @@ HMAC_SHA256(account_login|server|timestamp, API_SHARED_SECRET)
 ```json
 {
   "account_login": "123456",
-  "server": "Broker-Server",
   "timestamp": "2026-06-04 12:00:00",
   "balance": 10000,
   "equity": 9800,
@@ -101,3 +99,12 @@ HMAC_SHA256(account_login|server|timestamp, API_SHARED_SECRET)
 - `trade_reports`：盈亏快照
 - `trade_history`：成交历史
 
+## 导入旧 build 授权数据
+
+旧 `jinpixiu.licenses` 表只有交易账号和授权码，没有服务器字段。新系统按交易账号唯一导入：
+
+```bash
+php import_legacy_jinpixiu.php jinpixiu
+```
+
+导入后旧备注会作为“用户”显示，旧授权码和旧到期日会保留。

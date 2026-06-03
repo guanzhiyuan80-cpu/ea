@@ -16,7 +16,7 @@ if ($account !== '') { $where .= ' AND account_login = ?'; $params[] = $account;
 $customers = db()->query("SELECT DISTINCT customer_name FROM accounts ORDER BY customer_name")->fetchAll();
 $accounts = db()->query("SELECT DISTINCT account_login FROM accounts ORDER BY account_login")->fetchAll();
 
-$stmt = db()->prepare("SELECT COUNT(DISTINCT account_login, server_name) AS account_count,
+$stmt = db()->prepare("SELECT COUNT(DISTINCT account_login) AS account_count,
                               IFNULL(SUM(realized_profit),0) AS realized_sum,
                               IFNULL(AVG(equity),0) AS avg_equity,
                               IFNULL(SUM(floating_profit),0) AS floating_sum
@@ -29,14 +29,14 @@ $stmt = db()->prepare("SELECT DATE(report_time) AS d, SUM(realized_profit) AS re
 $stmt->execute($params);
 $daily = $stmt->fetchAll();
 
-$stmt = db()->prepare("SELECT customer_name, account_login, server_name,
+$stmt = db()->prepare("SELECT customer_name, account_login,
                               MAX(report_time) AS last_time,
                               SUBSTRING_INDEX(GROUP_CONCAT(balance ORDER BY report_time DESC), ',', 1) AS balance,
                               SUBSTRING_INDEX(GROUP_CONCAT(equity ORDER BY report_time DESC), ',', 1) AS equity,
                               SUBSTRING_INDEX(GROUP_CONCAT(floating_profit ORDER BY report_time DESC), ',', 1) AS floating_profit,
                               SUBSTRING_INDEX(GROUP_CONCAT(open_positions ORDER BY report_time DESC), ',', 1) AS open_positions
                        FROM trade_reports $where
-                       GROUP BY customer_name, account_login, server_name
+                       GROUP BY customer_name, account_login
                        ORDER BY customer_name, account_login");
 $stmt->execute($params);
 $latest = $stmt->fetchAll();
@@ -69,9 +69,9 @@ $latest = $stmt->fetchAll();
   </section>
   <section class="panel" style="margin-top:18px">
     <h2>账户最新快照</h2>
-    <table><thead><tr><th>用户</th><th>账号</th><th>服务器</th><th>余额</th><th>净值</th><th>浮盈亏</th><th>持仓</th><th>最后上报</th></tr></thead><tbody>
+    <table><thead><tr><th>用户</th><th>账号</th><th>余额</th><th>净值</th><th>浮盈亏</th><th>持仓</th><th>最后上报</th></tr></thead><tbody>
     <?php foreach($latest as $r): ?><tr>
-      <td><?= h($r['customer_name']) ?></td><td><?= h($r['account_login']) ?></td><td><?= h($r['server_name']) ?></td>
+      <td><?= h($r['customer_name']) ?></td><td><?= h($r['account_login']) ?></td>
       <td><?= number_format((float)$r['balance'],2) ?></td><td><?= number_format((float)$r['equity'],2) ?></td>
       <td><?= number_format((float)$r['floating_profit'],2) ?></td><td><?= (int)$r['open_positions'] ?></td><td><?= h($r['last_time']) ?></td>
     </tr><?php endforeach; ?>

@@ -5,12 +5,12 @@ $q = trim($_GET['q'] ?? '');
 $where = 'WHERE 1=1';
 $params = [];
 if ($q !== '') {
-    $where .= ' AND (account_login LIKE ? OR server_name LIKE ? OR customer_name LIKE ?)';
+    $where .= ' AND (account_login LIKE ? OR customer_name LIKE ?)';
     $like = '%' . $q . '%';
-    $params = [$like, $like, $like];
+    $params = [$like, $like];
 }
 
-$stmt = db()->prepare("SELECT id, account_login, server_name, customer_name, product, expires_at, last_paid_at, created_at,
+$stmt = db()->prepare("SELECT id, account_login, customer_name, product, expires_at, last_paid_at, created_at,
                               license_code IS NOT NULL AS has_license
                        FROM accounts $where ORDER BY id DESC LIMIT 300");
 $stmt->execute($params);

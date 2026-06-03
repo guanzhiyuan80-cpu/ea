@@ -5,8 +5,8 @@ function h(?string $value): string {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-function generate_license_code(string $account, string $server, string $expiryYmd): string {
-    $plain = $account . '|' . $server . '|' . $expiryYmd;
+function generate_license_code(string $account, string $expiryYmd): string {
+    $plain = $account . '|' . $expiryYmd;
     $key = LICENSE_XOR_KEY;
     $out = '';
     for ($i = 0, $n = strlen($plain), $k = strlen($key); $i < $n; $i++) {
@@ -60,7 +60,7 @@ function complete_paid_order(string $orderNo, string $transactionId = ''): ?arra
         }
 
         $newExpiry = add_month_from_expiry($account['expires_at']);
-        $license = generate_license_code($account['account_login'], $account['server_name'], date('Ymd', strtotime($newExpiry)));
+        $license = generate_license_code($account['account_login'], date('Ymd', strtotime($newExpiry)));
 
         $stmt = $pdo->prepare("INSERT INTO license_history
             (account_id, order_id, license_code, starts_at, expires_at, amount_yuan, created_at)
@@ -92,7 +92,6 @@ function verify_ea_signature(array $data): bool {
     $sig = (string)($data['signature'] ?? '');
     $payload = implode('|', [
         (string)($data['account_login'] ?? ''),
-        (string)($data['server'] ?? ''),
         (string)($data['timestamp'] ?? ''),
     ]);
     return hash_equals(hash_hmac('sha256', $payload, API_SHARED_SECRET), $sig);

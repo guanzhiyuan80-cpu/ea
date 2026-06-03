@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS `admins` (
 CREATE TABLE IF NOT EXISTS `accounts` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `account_login` VARCHAR(32) NOT NULL,
-    `server_name` VARCHAR(100) NOT NULL,
     `customer_name` VARCHAR(100) NOT NULL,
     `product` VARCHAR(32) NOT NULL DEFAULT 'XAUUSD',
     `license_code` TEXT NULL,
@@ -26,7 +25,7 @@ CREATE TABLE IF NOT EXISTS `accounts` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_account_server` (`account_login`, `server_name`),
+    UNIQUE KEY `uk_account_login` (`account_login`),
     KEY `idx_customer` (`customer_name`),
     KEY `idx_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='授权账号';
@@ -68,19 +67,17 @@ CREATE TABLE IF NOT EXISTS `heartbeat_logs` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `account_id` INT UNSIGNED NULL,
     `account_login` VARCHAR(32) NOT NULL,
-    `server_name` VARCHAR(100) NOT NULL,
     `authorized` TINYINT(1) NOT NULL DEFAULT 0,
     `ip_address` VARCHAR(45) NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_account_time` (`account_login`, `server_name`, `created_at`)
+    KEY `idx_account_time` (`account_login`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='EA心跳日志';
 
 CREATE TABLE IF NOT EXISTS `trade_reports` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `account_id` INT UNSIGNED NULL,
     `account_login` VARCHAR(32) NOT NULL,
-    `server_name` VARCHAR(100) NOT NULL,
     `customer_name` VARCHAR(100) NULL,
     `report_time` DATETIME NOT NULL,
     `balance` DECIMAL(15,2) NOT NULL DEFAULT 0,
@@ -92,7 +89,7 @@ CREATE TABLE IF NOT EXISTS `trade_reports` (
     `raw_json` MEDIUMTEXT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_account_time` (`account_login`, `server_name`, `report_time`),
+    KEY `idx_account_time` (`account_login`, `report_time`),
     KEY `idx_customer_time` (`customer_name`, `report_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='EA盈亏快照';
 
@@ -100,7 +97,6 @@ CREATE TABLE IF NOT EXISTS `trade_history` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `account_id` INT UNSIGNED NULL,
     `account_login` VARCHAR(32) NOT NULL,
-    `server_name` VARCHAR(100) NOT NULL,
     `deal_ticket` VARCHAR(64) NOT NULL,
     `symbol` VARCHAR(32) NOT NULL,
     `deal_type` VARCHAR(16) NOT NULL,
@@ -115,6 +111,6 @@ CREATE TABLE IF NOT EXISTS `trade_history` (
     `magic_number` BIGINT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_deal` (`account_login`, `server_name`, `deal_ticket`),
-    KEY `idx_account_time` (`account_login`, `server_name`, `deal_time`)
+    UNIQUE KEY `uk_deal` (`account_login`, `deal_ticket`),
+    KEY `idx_account_time` (`account_login`, `deal_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='EA成交历史';
