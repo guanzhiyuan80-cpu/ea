@@ -15,10 +15,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $err = '交易账号必须是数字';
     } else {
         try {
-            $stmt = db()->prepare("INSERT INTO accounts(account_login, customer_name, product, admin_note, created_by)
-                                   VALUES(?, ?, ?, ?, ?)");
-            $stmt->execute([$account, $customer, DEFAULT_PRODUCT, $note !== '' ? $note : null, $admin['username']]);
-            $msg = '账号添加成功，付款后自动开通远程授权';
+            $freeExpiry = (new DateTime('today'))->modify('+1 month')->format('Y-m-d 23:59:59');
+            $stmt = db()->prepare("INSERT INTO accounts(account_login, customer_name, product, expires_at, last_paid_at, admin_note, created_by)
+                                   VALUES(?, ?, ?, ?, NOW(), ?, ?)");
+            $stmt->execute([$account, $customer, DEFAULT_PRODUCT, $freeExpiry, $note !== '' ? $note : null, $admin['username']]);
+            $msg = '账号添加成功，已自动赠送首月免费远程授权';
         } catch (PDOException $e) {
             if (strpos($e->getMessage(), '1062') !== false) $err = '该交易账号已存在，禁止重复添加';
             else $err = '添加失败：' . $e->getMessage();
