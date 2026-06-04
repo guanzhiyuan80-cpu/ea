@@ -48,7 +48,9 @@ c:\Users\Administrator\Desktop\源码\           # 项目根目录
 ```
 
 **命名规范：**
-- 标准版：`金貔貅V{版本号}.mq5`（如 `金貔貅V1.19.mq5`）
+- 本地授权标准版：`金貔貅V{版本号}.mq5`（如 `金貔貅V1.25.mq5`），继续使用本地授权码，不改远程授权
+- 远程授权版：`金貔貅V{版本号}-远程授权.mq5`（如 `金貔貅V1.25-远程授权.mq5`），通过 HTTP API 到后台验证交易账号授权状态
+- V1.25 起保留两个并行版本；今后策略逻辑、风控逻辑、面板逻辑升级时，必须同步到两个版本，授权层差异单独维护
 - 历史品种适配版（已废弃）：`金貔貅V{版本号}-{品种}.mq5`
 
 ---
@@ -272,12 +274,20 @@ ManageHedgeRelease();     // 对冲止盈
   /log:"c:\Users\Administrator\Desktop\源码\金貔貅V1.25.log"
 ```
 
+**远程授权版编译**：
+```powershell
+& "C:\Program Files\MetaTrader 5\MetaEditor64.exe" `
+  /compile:"c:\Users\Administrator\Desktop\源码\金貔貅V1.25-远程授权.mq5" `
+  /log:"c:\Users\Administrator\Desktop\源码\金貔貅V1.25-远程授权.log"
+```
+
 **注意事项**：
 - ❌ 不要使用 `/portable` 参数（会禁用 AppData Include 查找）
 - ❌ 不要使用 `/include` 参数（需精确匹配终端 ID 目录）
 - ✅ 让 MetaEditor 自动识别默认终端的 `MQL5\Include`
 - ✅ 编译前确保 `LOGO.bmp` 和 `背景.bmp` 与 `.mq5` 同目录
 - ✅ 命令完成后需 `Start-Sleep 3` 等待 ex5 异步生成
+- ✅ 远程授权版需要在 MT5 的“工具 → 选项 → EA交易”中允许 `InpRemoteAuthUrl` 所在域名，否则 `WebRequest` 会失败
 
 ---
 
@@ -310,8 +320,9 @@ git push
 2. **修改版本号**：
    - `#property version "{new}"`
    - 面板标题 `ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "金貔貅 v{new}");`
-3. **编译验证**：MetaEditor 命令行编译，确保 0 errors
-4. **Git 提交**：add + commit + push 三件套
+3. **同步远程授权版**：同步策略逻辑到 `金貔貅V{new}-远程授权.mq5`，仅保留授权层差异
+4. **编译验证**：本地授权版和远程授权版都用 MetaEditor 命令行编译，确保 0 errors
+5. **Git 提交**：add + commit + push 三件套
 
 ---
 
