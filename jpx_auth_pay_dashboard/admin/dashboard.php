@@ -101,15 +101,21 @@ if ($account !== '') {
         $groupFloating[] = 0.0;
     }
 }
+function pnl_class($value): string {
+    $num = (float)$value;
+    if ($num > 0) return 'pos';
+    if ($num < 0) return 'neg';
+    return 'flat';
+}
 ?><!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>盈亏大屏</title><link rel="stylesheet" href="../assets/css/app.css"><script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script></head>
-<body>
-<header class="topbar"><div class="brand">金貔貅盈亏大屏</div><nav class="nav">
+<body class="dashboard-page">
+<header class="topbar dashboard-topbar"><div class="brand brand-with-logo"><img src="../assets/img/pixiu-logo.png" alt=""><span><b>金貔貅盈亏大屏</b><small>Gold Pixiu Monitor</small></span></div><nav class="nav">
   <a href="accounts.php">账号管理</a><a class="active" href="dashboard.php">盈亏大屏</a><a href="logout.php">退出</a>
 </nav></header>
 <main class="wrap">
-  <section class="panel">
+  <section class="panel dashboard-hero">
     <form class="toolbar" method="get">
       <div><label>用户</label><select name="customer" id="customerSelect"><option value="">全部</option><?php foreach($customers as $c): ?><option <?= $customer===$c['customer_name']?'selected':'' ?>><?= h($c['customer_name']) ?></option><?php endforeach; ?></select></div>
       <div><label>账号</label><select name="account"><option value="">全部</option><?php foreach($accounts as $a): ?><option <?= $account===$a['account_login']?'selected':'' ?>><?= h($a['account_login']) ?></option><?php endforeach; ?></select></div>
@@ -118,27 +124,27 @@ if ($account !== '') {
       <button class="btn primary">筛选</button>
     </form>
     <div class="grid cols-4">
-      <div class="kpi"><div class="muted">账号数</div><div class="num"><?= (int)$kpi['account_count'] ?></div></div>
-      <div class="kpi"><div class="muted">已实现盈亏</div><div class="num"><?= number_format((float)$kpi['realized_sum'],2) ?></div></div>
-      <div class="kpi"><div class="muted">浮动盈亏合计</div><div class="num"><?= number_format((float)$kpi['floating_sum'],2) ?></div></div>
-      <div class="kpi"><div class="muted">真实余额合计</div><div class="num"><?= number_format((float)$kpi['balance_sum'],2) ?></div></div>
+      <div class="kpi metric-card"><div class="muted">账号数</div><div class="num"><?= (int)$kpi['account_count'] ?></div><div class="metric-note">当前筛选范围</div></div>
+      <div class="kpi metric-card <?= pnl_class($kpi['realized_sum']) ?>"><div class="muted">已实现盈亏</div><div class="num"><?= number_format((float)$kpi['realized_sum'],2) ?></div><div class="metric-note">按每日最新快照累计</div></div>
+      <div class="kpi metric-card <?= pnl_class($kpi['floating_sum']) ?>"><div class="muted">浮动盈亏合计</div><div class="num"><?= number_format((float)$kpi['floating_sum'],2) ?></div><div class="metric-note">按账号最新快照合计</div></div>
+      <div class="kpi metric-card balance"><div class="muted">真实余额合计</div><div class="num"><?= number_format((float)$kpi['balance_sum'],2) ?></div><div class="metric-note">不含浮动净值</div></div>
     </div>
   </section>
-  <section class="panel" style="margin-top:18px">
+  <section class="panel chart-panel main-chart-panel">
     <h2><?= h($groupTitle) ?></h2>
     <div class="chart chart-large" id="groupChart"></div>
   </section>
-  <section class="grid" style="margin-top:18px;grid-template-columns:1fr 1fr">
-    <div class="chart" id="dailyChart"></div>
-    <div class="chart" id="floatingChart"></div>
+  <section class="grid dashboard-chart-grid">
+    <div class="chart chart-panel" id="dailyChart"></div>
+    <div class="chart chart-panel" id="floatingChart"></div>
   </section>
-  <section class="panel" style="margin-top:18px">
+  <section class="panel table-panel">
     <h2>账户最新快照</h2>
-    <table><thead><tr><th>用户</th><th>账号</th><th>余额</th><th>净值</th><th>浮盈亏</th><th>持仓</th><th>最后上报</th></tr></thead><tbody>
+    <table class="data-table"><thead><tr><th>用户</th><th>账号</th><th>余额</th><th>净值</th><th>浮盈亏</th><th>持仓</th><th>最后上报</th></tr></thead><tbody>
     <?php foreach($latest as $r): ?><tr>
       <td><?= h($r['customer_name']) ?></td><td><?= h($r['account_login']) ?></td>
       <td><?= number_format((float)$r['balance'],2) ?></td><td><?= number_format((float)$r['equity'],2) ?></td>
-      <td><?= number_format((float)$r['floating_profit'],2) ?></td><td><?= (int)$r['open_positions'] ?></td><td><?= h($r['last_time']) ?></td>
+      <td class="<?= pnl_class($r['floating_profit']) ?>"><?= number_format((float)$r['floating_profit'],2) ?></td><td><?= (int)$r['open_positions'] ?></td><td><?= h($r['last_time']) ?></td>
     </tr><?php endforeach; ?>
     </tbody></table>
   </section>
@@ -149,31 +155,45 @@ const groupLabels = <?= json_encode($groupLabels, JSON_UNESCAPED_UNICODE) ?>;
 const groupRealized = <?= json_encode($groupRealized, JSON_UNESCAPED_UNICODE) ?>;
 const groupFloating = <?= json_encode($groupFloating, JSON_UNESCAPED_UNICODE) ?>;
 const groupTitle = <?= json_encode($groupTitle, JSON_UNESCAPED_UNICODE) ?>;
+const axisColor = '#aeb9d3';
+const splitColor = 'rgba(223,197,117,.18)';
+const titleStyle = {color:'#fff5c9',fontWeight:800};
 document.getElementById('customerSelect')?.addEventListener('change', e => {
   const form = e.target.form;
   if (form?.account) form.account.value = '';
   form?.submit();
 });
 echarts.init(document.getElementById('groupChart')).setOption({
-  title:{text:groupTitle,textStyle:{color:'#eef3ff'}},
-  tooltip:{trigger:'axis'},
-  legend:{top:28,textStyle:{color:'#9da9c3'},data:['已实现盈亏','浮动盈亏']},
-  grid:{top:72,left:58,right:32,bottom:56},
-  xAxis:{type:'category',data:groupLabels,axisLabel:{color:'#9da9c3',interval:0,rotate:groupLabels.length>8?28:0}},
-  yAxis:{type:'value',axisLabel:{color:'#9da9c3'}},
+  backgroundColor:'transparent',
+  title:{text:groupTitle,textStyle:titleStyle},
+  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'}},
+  legend:{top:28,textStyle:{color:axisColor},data:['已实现盈亏','浮动盈亏']},
+  grid:{top:72,left:64,right:36,bottom:58},
+  xAxis:{type:'category',data:groupLabels,axisLine:{lineStyle:{color:'rgba(216,172,79,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor,interval:0,rotate:groupLabels.length>8?28:0}},
+  yAxis:{type:'value',axisLabel:{color:axisColor},splitLine:{lineStyle:{color:splitColor}}},
   series:[
-    {name:'已实现盈亏',type:'bar',data:groupRealized,itemStyle:{color:'#38d07f'}},
-    {name:'浮动盈亏',type:'bar',data:groupFloating,itemStyle:{color:'#3aa7ff'}}
+    {name:'已实现盈亏',type:'bar',data:groupRealized,barMaxWidth:34,itemStyle:{color:'#39d98a',borderRadius:[5,5,0,0]}},
+    {name:'浮动盈亏',type:'bar',data:groupFloating,barMaxWidth:34,itemStyle:{color:'#42b8ff',borderRadius:[5,5,0,0]}}
   ]
 });
 const days = daily.map(x=>x.d);
 echarts.init(document.getElementById('dailyChart')).setOption({
-  title:{text:'每日已实现盈亏',textStyle:{color:'#eef3ff'}},tooltip:{trigger:'axis'},xAxis:{type:'category',data:days,axisLabel:{color:'#9da9c3'}},yAxis:{type:'value',axisLabel:{color:'#9da9c3'}},
-  series:[{type:'bar',data:daily.map(x=>Number(x.realized||0)),itemStyle:{color:'#38d07f'}}]
+  backgroundColor:'transparent',
+  title:{text:'每日已实现盈亏',textStyle:titleStyle},
+  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'}},
+  grid:{top:64,left:60,right:26,bottom:48},
+  xAxis:{type:'category',data:days,axisLine:{lineStyle:{color:'rgba(216,172,79,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor}},
+  yAxis:{type:'value',axisLabel:{color:axisColor},splitLine:{lineStyle:{color:splitColor}}},
+  series:[{type:'bar',data:daily.map(x=>Number(x.realized||0)),barMaxWidth:42,itemStyle:{color:'#39d98a',borderRadius:[5,5,0,0]}}]
 });
 echarts.init(document.getElementById('floatingChart')).setOption({
-  title:{text:'每日浮动盈亏',textStyle:{color:'#eef3ff'}},tooltip:{trigger:'axis'},xAxis:{type:'category',data:days,axisLabel:{color:'#9da9c3'}},yAxis:{type:'value',axisLabel:{color:'#9da9c3'}},
-  series:[{type:'line',smooth:true,data:daily.map(x=>Number(x.floating||0)),lineStyle:{color:'#3aa7ff'},areaStyle:{color:'rgba(58,167,255,.18)'}}]
+  backgroundColor:'transparent',
+  title:{text:'每日浮动盈亏',textStyle:titleStyle},
+  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'}},
+  grid:{top:64,left:60,right:26,bottom:48},
+  xAxis:{type:'category',data:days,axisLine:{lineStyle:{color:'rgba(216,172,79,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor}},
+  yAxis:{type:'value',axisLabel:{color:axisColor},splitLine:{lineStyle:{color:splitColor}}},
+  series:[{type:'line',smooth:true,symbolSize:8,data:daily.map(x=>Number(x.floating||0)),lineStyle:{color:'#42b8ff',width:3},itemStyle:{color:'#fff1a8',borderColor:'#42b8ff',borderWidth:2},areaStyle:{color:'rgba(66,184,255,.16)'}}]
 });
 </script>
 </body></html>
