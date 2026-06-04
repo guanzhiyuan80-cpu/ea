@@ -224,12 +224,15 @@ ManageHedgeRelease();     // 对冲止盈
 
 ### 4.10 多账户参数随机偏移（防共振）
 
-`ApplyAccountOffsets()` 对以下参数注入基于账户ID的偏移：
-- `g_effATRCoeff`：±15%
+`ApplyAccountOffsets()` 对以下参数注入稳定随机偏移。V1.25 已升级为 64 位混合种子，混合账户、Magic、ChartID、品种和 salt，避免相邻账号偏移聚集：
+- `g_effATRCoeff`：±30%
 - `g_effBasketTP`：±25%
-- `g_effBaseSpacing`：±20%
-- `EMA Fast` 周期：黄金场景 ±15%（原13→11~15）
-- `EMA Slow` 周期：黄金场景 ±10%（原34→31~37）
+- `g_effBaseSpacing`：±45%
+- `g_effIncSpacing`：每层递增加仓间距 ±35%
+- `EMA Fast` 周期：黄金场景 ±28%
+- `EMA Slow` 周期：黄金场景 ±22%
+- `g_effEmaStrongAtrMult`：EMA 强信号距离慢线阈值约 0.30~0.70 ATR
+- `InpSMCScoreThreshold`：不做账号偏移，保持 10/20/30 EMA 分档的阈值稳定性
 
 ---
 

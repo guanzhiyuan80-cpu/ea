@@ -495,8 +495,10 @@ datetime g_martLastLayerTime = 0;     // last individual layer addition time
 double g_effATRCoeff    = 0.0;   // Effective ATR spacing coefficient
 double g_effBasketTP    = 0.0;   // Effective basket base TP (cents)
 double g_effBaseSpacing = 0.0;   // Effective base spacing (points)
+double g_effIncSpacing  = 0.0;   // Effective per-layer spacing increment (points)
 int    g_effEmaFast     = 0;     // Effective EMA fast period (偏移后)
 int    g_effEmaSlow     = 0;     // Effective EMA slow period (偏移后)
+double g_effEmaStrongAtrMult = 0.5; // EMA强信号: 距慢线ATR倍数
 
 // 每层TP累计目标（启动时按账号种子生成稳定序列，每层增量在 InpMartBasketTPPerLayer × (1 ± 25%) 范围）
 // 防止多EA单边大趋势下同时触发TP共振，索引=层序号-1，0=首层
@@ -798,27 +800,31 @@ bool ValidateLicense(string licenseKey, string &outAccount, string &outExpiry, s
 }
 
 //+------------------------------------------------------------------+
-//| Account-based offset: deterministic hash to [-1, 1]               |
-//| Uses MurmurHash3-style mixing so adjacent account numbers         |
-//| produce well-separated offset values (avoids clustering).         |
+//| Account-based offset: deterministic 64-bit mix to [-1, 1]          |
+//| Mixes account, magic, chart id and symbol to avoid clustering.     |
 //+------------------------------------------------------------------+
 double GetAccountOffset(long salt)
 {
-   long acc = AccountInfoInteger(ACCOUNT_LOGIN);
-   // Integer hash mixing (32-bit) — sufficient spread for de-correlation
-   int h = (int)(acc ^ salt);
-   h = (h ^ 61) ^ (h >> 16);
-   h = h + (h << 3);
-   h = h ^ (h >> 4);
-   h = h * 0x27D4EB2D;
-   h = h ^ (h >> 15);
-   // 严格映射到 [-1.0, 1.0]（1/(2^31-1)*2 -1）
-   return (double)(h & 0x7FFFFFFF) / 2147483647.0 * 2.0 - 1.0;
+   ulong h = (ulong)AccountInfoInteger(ACCOUNT_LOGIN);
+   h ^= (ulong)InpMagicNumber + 0x9E3779B97F4A7C15;
+   h ^= (ulong)ChartID() + 0xBF58476D1CE4E5B9;
+   h ^= (ulong)(salt * 0x94D049BB133111EB);
+   for(int i = 0; i < StringLen(_Symbol); ++i)
+      h ^= ((ulong)StringGetCharacter(_Symbol, i) + 0x9E3779B97F4A7C15 + (h << 6) + (h >> 2));
+
+   h ^= (h >> 30);
+   h *= 0xBF58476D1CE4E5B9;
+   h ^= (h >> 27);
+   h *= 0x94D049BB133111EB;
+   h ^= (h >> 31);
+
+   double u = (double)(h & 0x7FFFFFFFFFFFFFFF) / 9223372036854775807.0;
+   return u * 2.0 - 1.0;
 }
 
 //+------------------------------------------------------------------+
 //| Apply account offsets to selected parameters (called in OnInit)   |
-//| Offset ranges: ATR coeff ±15%, Basket TP ±25%, Base spacing ±20% |
+//| Offset ranges: ATR coeff ±30%, Basket TP ±25%, Base spacing ±45% |
 //| 回测/优化模式下使用原始参数，便于参数评估与结果复现           |
 //+------------------------------------------------------------------+
 void ApplyAccountOffsets()
@@ -829,20 +835,24 @@ void ApplyAccountOffsets()
       g_effATRCoeff    = InpMartATRSpacingCoeff;
       g_effBasketTP    = InpMartBasketTP_USD;
       g_effBaseSpacing = InpMartBaseSpacingPts;
+      g_effIncSpacing  = InpMartIncSpacingPts;
       g_effEmaFast     = InpMartEmaFastPeriod;
       g_effEmaSlow     = InpMartEmaSlowPeriod;
+      g_effEmaStrongAtrMult = 0.5;
       PrintFormat("[账户偏移] 回测/优化模式，使用原始参数 | ATR系数=%.4f TP基础=%.1f 基准间距=%d EMA=%d/%d",
                   g_effATRCoeff, g_effBasketTP, InpMartBaseSpacingPts, g_effEmaFast, g_effEmaSlow);
       return;
    }
 
-   g_effATRCoeff    = InpMartATRSpacingCoeff * (1.0 + GetAccountOffset(1) * 0.15);
+   g_effATRCoeff    = InpMartATRSpacingCoeff * (1.0 + GetAccountOffset(11) * 0.30);
    g_effBasketTP    = InpMartBasketTP_USD   * (1.0 + GetAccountOffset(2) * 0.25);
-   g_effBaseSpacing = InpMartBaseSpacingPts  * (1.0 + GetAccountOffset(3) * 0.20);
+   g_effBaseSpacing = InpMartBaseSpacingPts  * (1.0 + GetAccountOffset(31) * 0.45);
+   g_effIncSpacing  = InpMartIncSpacingPts   * (1.0 + GetAccountOffset(32) * 0.35);
+   g_effEmaStrongAtrMult = 0.5 * (1.0 + GetAccountOffset(41) * 0.40); // 0.30~0.70
 
-   // EMA 偏移: Fast ±15%, Slow ±10%（取整，保证 fast < slow）
-   double emaFastOff = GetAccountOffset(4) * 0.15;  // [-0.15, +0.15]
-   double emaSlowOff = GetAccountOffset(5) * 0.10;  // [-0.10, +0.10]
+   // EMA 偏移: Fast ±28%, Slow ±22%（取整，保证 fast < slow）
+   double emaFastOff = GetAccountOffset(51) * 0.28;
+   double emaSlowOff = GetAccountOffset(52) * 0.22;
    g_effEmaFast = (int)MathRound(InpMartEmaFastPeriod * (1.0 + emaFastOff));
    g_effEmaSlow = (int)MathRound(InpMartEmaSlowPeriod * (1.0 + emaSlowOff));
    // 安全约束: Fast≥3, Slow≥Fast+3
@@ -853,12 +863,15 @@ void ApplyAccountOffsets()
    if(InpMartATRSpacingCoeff > 0.0 && g_effATRCoeff < 0.001)  g_effATRCoeff = 0.001;
    if(InpMartBasketTP_USD > 0.0   && g_effBasketTP < 1.0)    g_effBasketTP = 1.0;
    if(InpMartBaseSpacingPts > 0   && g_effBaseSpacing < 20.0) g_effBaseSpacing = 20.0;
+   if(InpMartIncSpacingPts > 0    && g_effIncSpacing < 0.0)   g_effIncSpacing = 0.0;
+   if(g_effEmaStrongAtrMult < 0.25) g_effEmaStrongAtrMult = 0.25;
+   if(g_effEmaStrongAtrMult > 0.80) g_effEmaStrongAtrMult = 0.80;
 
-   PrintFormat("[账户偏移] 账号=%lld | ATR系数=%.4f(原%.4f) TP基础=%.1f(原%.1f) 基准间距=%.0f(原%d) EMA=%d/%d(原%d/%d)",
+   PrintFormat("[账户偏移] 账号=%lld | ATR系数=%.4f(原%.4f) TP基础=%.1f(原%.1f) 间距=%.0f+%.0f(原%d+%d) EMA=%d/%d(原%d/%d) 强EMA=%.2fATR",
                AccountInfoInteger(ACCOUNT_LOGIN), g_effATRCoeff, InpMartATRSpacingCoeff,
                g_effBasketTP, InpMartBasketTP_USD,
-               g_effBaseSpacing, InpMartBaseSpacingPts,
-               g_effEmaFast, g_effEmaSlow, InpMartEmaFastPeriod, InpMartEmaSlowPeriod);
+               g_effBaseSpacing, g_effIncSpacing, InpMartBaseSpacingPts, InpMartIncSpacingPts,
+               g_effEmaFast, g_effEmaSlow, InpMartEmaFastPeriod, InpMartEmaSlowPeriod, g_effEmaStrongAtrMult);
 }
 
 //+------------------------------------------------------------------+
@@ -958,7 +971,7 @@ void SetSpeedMode(int mode)
    double base = values[mode];
    // 在檔位基准值上应用账号偏移，避免多实例ATR系数完全相同
    if(!g_isTester)
-      g_effATRCoeff = base * (1.0 + GetAccountOffset(1) * 0.15);
+      g_effATRCoeff = base * (1.0 + GetAccountOffset(11) * 0.30);
    else
       g_effATRCoeff = base;
    if(g_effATRCoeff < 0.01) g_effATRCoeff = 0.01;  // 地板保护
@@ -1946,7 +1959,7 @@ void CalcEmaScores(double fast1, double slow1, double close1, int &outLong, int 
    // 收盘价距慢线的距离(用入场TF的ATR做阈值,与动态间距同一根ATR)
    double dist = MathAbs(close1 - slow1);
    double atr  = (g_hATR_Spacing != INVALID_HANDLE) ? GetATRValue(g_hATR_Spacing) : 0.0;
-   bool farFromSlow = (atr > 0.0 && dist >= atr * 0.5);
+   bool farFromSlow = (atr > 0.0 && dist >= atr * g_effEmaStrongAtrMult);
 
    int strongScore = InpSMCWeightEMA;                                // 满分
    int midScore    = (int)MathRound(InpSMCWeightEMA * 2.0 / 3.0);    // 2/3
@@ -4607,7 +4620,7 @@ double GetATRValue(int handle, int shift=1)
 //+------------------------------------------------------------------+
 double GetMartSpacingPts()
   {
-   double baseSpacing = g_effBaseSpacing + MathMax(0, g_martMaxLayerSeq - 1) * InpMartIncSpacingPts;
+   double baseSpacing = g_effBaseSpacing + MathMax(0, g_martMaxLayerSeq - 1) * g_effIncSpacing;
    if(g_effATRCoeff <= 0.0 || g_hATR_Spacing == INVALID_HANDLE || g_hATR_SpacingLong == INVALID_HANDLE)
       return baseSpacing;
    double atrShort = GetATRValue(g_hATR_Spacing);
