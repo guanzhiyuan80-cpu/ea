@@ -16,11 +16,10 @@
 
 - 管理员添加账号时填写：交易账号、用户、备注。
 - `交易账号` 唯一，重复添加会被拒绝。
-- 新账号默认不生成授权码。
+- 新账号默认未授权，付款后自动开通远程授权。
 - 游客可以查看账号续费列表并扫码支付。
 - 每次支付 200 元，自动延期 1 个月。
 - 未到期账号从当前到期日顺延，过期账号从付款当天顺延。
-- 授权码只在管理员账号管理页显示，游客不可见。
 - 管理员备注只在管理员页显示。
 
 ## 微信支付
@@ -94,17 +93,22 @@ HMAC_SHA256(account_login|timestamp, API_SHARED_SECRET)
 
 - `accounts`：授权账号主表
 - `renew_orders`：续费支付订单
-- `license_history`：授权码生成历史
 - `heartbeat_logs`：EA认证/心跳日志
 - `trade_reports`：盈亏快照
 - `trade_history`：成交历史
 
 ## 导入旧 build 授权数据
 
-旧 `jinpixiu.licenses` 表只有交易账号和授权码，没有服务器字段。新系统按交易账号唯一导入：
+旧 `jinpixiu.licenses` 表按交易账号唯一导入：
 
 ```bash
 php import_legacy_jinpixiu.php jinpixiu
 ```
 
-导入后旧备注会作为“用户”显示，旧授权码和旧到期日会保留。
+导入后旧备注会作为“用户”显示，旧到期日会保留，旧授权码不再保留。
+
+如果服务器上已经部署过早期新后台，执行下面 SQL 删除授权码字段：
+
+```bash
+mysql -u你的账号 -p jpx_auth_pay_dashboard < migrate_remove_license_codes.sql
+```

@@ -15,10 +15,8 @@ CREATE TABLE IF NOT EXISTS `accounts` (
     `account_login` VARCHAR(32) NOT NULL,
     `customer_name` VARCHAR(100) NOT NULL,
     `product` VARCHAR(32) NOT NULL DEFAULT 'XAUUSD',
-    `license_code` TEXT NULL,
     `expires_at` DATETIME NULL,
     `last_paid_at` DATETIME NULL,
-    `latest_license_id` INT UNSIGNED NULL,
     `last_heartbeat_at` DATETIME NULL,
     `admin_note` TEXT NULL,
     `created_by` VARCHAR(64) NOT NULL,
@@ -48,20 +46,6 @@ CREATE TABLE IF NOT EXISTS `renew_orders` (
     KEY `idx_account` (`account_id`),
     KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='续费支付订单';
-
-CREATE TABLE IF NOT EXISTS `license_history` (
-    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `account_id` INT UNSIGNED NOT NULL,
-    `order_id` INT UNSIGNED NULL,
-    `license_code` TEXT NOT NULL,
-    `starts_at` DATETIME NOT NULL,
-    `expires_at` DATETIME NOT NULL,
-    `amount_yuan` DECIMAL(10,2) NOT NULL,
-    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY `idx_account` (`account_id`),
-    KEY `idx_expires` (`expires_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='授权码生成历史';
 
 CREATE TABLE IF NOT EXISTS `heartbeat_logs` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

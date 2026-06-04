@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/business.php';
 try {
-    $stmt = db()->query("SELECT id, account_login, customer_name, expires_at, license_code IS NOT NULL AS has_license
+    $stmt = db()->query("SELECT id, account_login, customer_name, expires_at
                          FROM accounts ORDER BY id DESC LIMIT 300");
     $accounts = $stmt->fetchAll();
 } catch (Throwable $e) {
@@ -29,7 +29,7 @@ try {
     <table id="accountTable">
       <thead><tr><th>用户</th><th>交易账号</th><th>状态</th><th>到期时间</th><th>操作</th></tr></thead>
       <tbody>
-      <?php foreach ($accounts as $a): $status = account_status($a['expires_at'], (bool)$a['has_license']); ?>
+      <?php foreach ($accounts as $a): $status = account_status($a['expires_at']); ?>
         <tr data-text="<?= h($a['customer_name'] . ' ' . $a['account_login']) ?>">
           <td><?= h($a['customer_name']) ?></td><td><?= h($a['account_login']) ?></td>
           <td><span class="status <?= h($status) ?>"><?= h($status) ?></span></td>

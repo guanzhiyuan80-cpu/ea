@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/business.php';
 
 // Import old build/licenses rows into the new billing system.
+// Only account, customer remark and expiry are imported; old license codes are discarded.
 $legacyDbName = $_GET['db'] ?? ($argv[1] ?? 'jinpixiu');
 
 $pdo = db();
@@ -32,26 +33,17 @@ foreach ($rows as $r) {
     try {
         $pdo->beginTransaction();
         $stmt = $pdo->prepare("INSERT INTO accounts
-            (account_login, customer_name, product, license_code, expires_at, last_paid_at, admin_note, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'legacy_import', ?, NOW())");
+            (account_login, customer_name, product, expires_at, last_paid_at, admin_note, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'legacy_import', ?, NOW())");
         $stmt->execute([
             $account,
             $customer,
             $r['product'] ?: DEFAULT_PRODUCT,
-            $r['license_code'],
             $expiresAt,
             $r['created_at'],
             $note,
             $r['created_at'],
         ]);
-        $accountId = (int)$pdo->lastInsertId();
-
-        $stmt = $pdo->prepare("INSERT INTO license_history
-            (account_id, order_id, license_code, starts_at, expires_at, amount_yuan, created_at)
-            VALUES (?, NULL, ?, ?, ?, 0, ?)");
-        $stmt->execute([$accountId, $r['license_code'], $r['created_at'], $expiresAt, $r['created_at']]);
-        $licenseId = (int)$pdo->lastInsertId();
-        $pdo->prepare("UPDATE accounts SET latest_license_id = ? WHERE id = ?")->execute([$licenseId, $accountId]);
         $pdo->commit();
         $imported++;
     } catch (PDOException $e) {

@@ -4,7 +4,7 @@ require_once __DIR__ . '/../includes/wxpay.php';
 $orderNo = trim($_GET['order_no'] ?? '');
 if ($orderNo === '') json_response(['ok' => false, 'msg' => '订单号不能为空'], 400);
 
-$stmt = db()->prepare("SELECT o.*, a.expires_at, a.license_code
+$stmt = db()->prepare("SELECT o.*, a.expires_at
                        FROM renew_orders o
                        JOIN accounts a ON a.id = o.account_id
                        WHERE o.order_no = ?");

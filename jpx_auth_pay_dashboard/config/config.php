@@ -16,7 +16,6 @@ define('RENEW_AMOUNT_YUAN', 200);
 define('RENEW_MONTHS', 1);
 define('EXPIRE_WARNING_DAYS', 3);
 define('DEFAULT_PRODUCT', 'XAUUSD');
-define('LICENSE_XOR_KEY', 'JPX2025GoldEA!@#');
 define('API_SHARED_SECRET', 'CHANGE_ME_EA_HTTP_SECRET');
 
 date_default_timezone_set('Asia/Shanghai');

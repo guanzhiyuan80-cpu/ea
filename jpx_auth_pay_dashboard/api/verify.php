@@ -16,7 +16,7 @@ $warning = false;
 $daysLeft = null;
 
 if ($account) {
-    $status = account_status($account['expires_at'], !empty($account['license_code']));
+    $status = account_status($account['expires_at']);
     if (in_array($status, ['active', 'warning'], true)) {
         $authorized = true;
         $today = new DateTime('today');

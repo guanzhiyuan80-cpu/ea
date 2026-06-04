@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = db()->prepare("INSERT INTO accounts(account_login, customer_name, product, admin_note, created_by)
                                    VALUES(?, ?, ?, ?, ?)");
             $stmt->execute([$account, $customer, DEFAULT_PRODUCT, $note !== '' ? $note : null, $admin['username']]);
-            $msg = '账号添加成功，付款后才会生成授权码';
+            $msg = '账号添加成功，付款后自动开通远程授权';
         } catch (PDOException $e) {
             if (strpos($e->getMessage(), '1062') !== false) $err = '该交易账号已存在，禁止重复添加';
             else $err = '添加失败：' . $e->getMessage();
@@ -59,16 +59,15 @@ $accounts = $stmt->fetchAll();
   <section class="panel" style="margin-top:18px">
     <form class="toolbar" method="get"><div><label>搜索</label><input name="q" value="<?= h($q) ?>" placeholder="账号/用户/备注"></div><button class="btn">搜索</button></form>
     <table>
-      <thead><tr><th>ID</th><th>用户</th><th>账号</th><th>状态</th><th>到期时间</th><th>授权码</th><th>备注</th><th>心跳</th></tr></thead>
+      <thead><tr><th>ID</th><th>用户</th><th>账号</th><th>状态</th><th>到期时间</th><th>备注</th><th>心跳</th></tr></thead>
       <tbody>
-      <?php foreach ($accounts as $a): $status = account_status($a['expires_at'], !empty($a['license_code'])); ?>
+      <?php foreach ($accounts as $a): $status = account_status($a['expires_at']); ?>
         <tr data-id="<?= (int)$a['id'] ?>">
           <td><?= (int)$a['id'] ?></td>
           <td><input class="edit-customer" value="<?= h($a['customer_name']) ?>"></td>
           <td><input class="edit-account" value="<?= h($a['account_login']) ?>"></td>
           <td><span class="status <?= h($status) ?>"><?= h($status) ?></span></td>
           <td><?= h($a['expires_at'] ?: '-') ?></td>
-          <td class="code"><?= h($a['license_code'] ?: '付款后生成') ?></td>
           <td><textarea class="edit-note"><?= h($a['admin_note']) ?></textarea></td>
           <td><?= h($a['last_heartbeat_at'] ?: '-') ?><br><button class="btn" onclick="saveRow(this)">保存</button></td>
         </tr>

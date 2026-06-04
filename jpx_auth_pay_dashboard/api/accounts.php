@@ -10,12 +10,11 @@ if ($q !== '') {
     $params = [$like, $like];
 }
 
-$stmt = db()->prepare("SELECT id, account_login, customer_name, product, expires_at, last_paid_at, created_at,
-                              license_code IS NOT NULL AS has_license
+$stmt = db()->prepare("SELECT id, account_login, customer_name, product, expires_at, last_paid_at, created_at
                        FROM accounts $where ORDER BY id DESC LIMIT 300");
 $stmt->execute($params);
 $items = $stmt->fetchAll();
 foreach ($items as &$item) {
-    $item['status'] = account_status($item['expires_at'], (bool)$item['has_license']);
+    $item['status'] = account_status($item['expires_at']);
 }
 json_response(['ok' => true, 'items' => $items, 'amount_yuan' => RENEW_AMOUNT_YUAN]);

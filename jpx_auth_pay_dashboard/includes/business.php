@@ -5,18 +5,8 @@ function h(?string $value): string {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-function generate_license_code(string $account, string $expiryYmd): string {
-    $plain = $account . '|' . $expiryYmd;
-    $key = LICENSE_XOR_KEY;
-    $out = '';
-    for ($i = 0, $n = strlen($plain), $k = strlen($key); $i < $n; $i++) {
-        $out .= chr(ord($plain[$i]) ^ ord($key[$i % $k]));
-    }
-    return base64_encode($out);
-}
-
-function account_status(?string $expiresAt, bool $hasLicense): string {
-    if (!$hasLicense || !$expiresAt) return 'unpaid';
+function account_status(?string $expiresAt): string {
+    if (!$expiresAt) return 'unpaid';
     $today = new DateTime('today');
     $exp = new DateTime(substr($expiresAt, 0, 10));
     $diff = (int)$today->diff($exp)->format('%r%a');
@@ -59,19 +49,10 @@ function complete_paid_order(string $orderNo, string $transactionId = ''): ?arra
             throw new RuntimeException('账号不存在');
         }
 
-        $newExpiry = add_month_from_expiry($account['expires_at']);
-        $license = generate_license_code($account['account_login'], date('Ymd', strtotime($newExpiry)));
-
-        $stmt = $pdo->prepare("INSERT INTO license_history
-            (account_id, order_id, license_code, starts_at, expires_at, amount_yuan, created_at)
-            VALUES (?, ?, ?, NOW(), ?, ?, NOW())");
-        $stmt->execute([(int)$account['id'], (int)$order['id'], $license, $newExpiry, (float)$order['amount_yuan']]);
-        $licenseId = (int)$pdo->lastInsertId();
-
         $stmt = $pdo->prepare("UPDATE accounts
-            SET license_code = ?, expires_at = ?, last_paid_at = NOW(), latest_license_id = ?, updated_at = NOW()
+            SET expires_at = ?, last_paid_at = NOW(), updated_at = NOW()
             WHERE id = ?");
-        $stmt->execute([$license, $newExpiry, $licenseId, (int)$account['id']]);
+        $stmt->execute([$newExpiry, (int)$account['id']]);
 
         $stmt = $pdo->prepare("UPDATE renew_orders
             SET status = 'paid', paid_at = NOW(), wx_transaction_id = ?, updated_at = NOW()
