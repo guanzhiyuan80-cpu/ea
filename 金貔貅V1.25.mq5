@@ -1158,6 +1158,8 @@ void OnTick()
          CloseAllMartPositions();
       g_dailyLocked = true;
       g_noEntryReason = "日亏损锁定(超" + DoubleToString(InpMaxDailyLossPercent,1) + "%)";
+      ComputeSignalDiagnostics();
+      if(InpShowStatusPanel) UpdateStatusPanel();
       return;
      }
 
@@ -1167,6 +1169,8 @@ void OnTick()
          g_noEntryReason = "日亏损锁定(超" + DoubleToString(InpMaxDailyLossPercent,1) + "%)";
       else
          g_noEntryReason = "硬止损熔断(浮亏超$" + DoubleToString(InpMartHardSL_USD,0) + ")";
+      ComputeSignalDiagnostics();
+      if(InpShowStatusPanel) UpdateStatusPanel();
       return;
      }
 
@@ -1195,6 +1199,7 @@ void OnTick()
          g_martDirection = MART_DIR_NONE;
         }
       ComputeSignalDiagnostics();
+      if(InpShowStatusPanel) UpdateStatusPanel();
       return;
      }
 
