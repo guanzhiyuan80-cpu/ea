@@ -26,6 +26,8 @@
 
 配置文件：`config/wxpay.php`
 
+真实商户密钥请放在 `config/wxpay.local.php`，该文件已被 Git 忽略，不会提交到仓库。
+
 当前使用微信支付 v2 Native 扫码支付，写法参考旧 `php_admin`：
 
 ```php
