@@ -14,7 +14,13 @@ if ($customer !== '') { $where .= ' AND customer_name = ?'; $params[] = $custome
 if ($account !== '') { $where .= ' AND account_login = ?'; $params[] = $account; }
 
 $customers = db()->query("SELECT DISTINCT customer_name FROM accounts ORDER BY customer_name")->fetchAll();
-$accounts = db()->query("SELECT DISTINCT account_login FROM accounts ORDER BY account_login")->fetchAll();
+if ($customer !== '') {
+    $stmt = db()->prepare("SELECT DISTINCT account_login FROM accounts WHERE customer_name = ? ORDER BY account_login");
+    $stmt->execute([$customer]);
+    $accounts = $stmt->fetchAll();
+} else {
+    $accounts = db()->query("SELECT DISTINCT account_login FROM accounts ORDER BY account_login")->fetchAll();
+}
 
 $stmt = db()->prepare("SELECT COUNT(DISTINCT account_login) AS account_count,
                               IFNULL(SUM(realized_profit),0) AS realized_sum,
@@ -50,7 +56,7 @@ $latest = $stmt->fetchAll();
 <main class="wrap">
   <section class="panel">
     <form class="toolbar" method="get">
-      <div><label>用户</label><select name="customer"><option value="">全部</option><?php foreach($customers as $c): ?><option <?= $customer===$c['customer_name']?'selected':'' ?>><?= h($c['customer_name']) ?></option><?php endforeach; ?></select></div>
+      <div><label>用户</label><select name="customer" id="customerSelect"><option value="">全部</option><?php foreach($customers as $c): ?><option <?= $customer===$c['customer_name']?'selected':'' ?>><?= h($c['customer_name']) ?></option><?php endforeach; ?></select></div>
       <div><label>账号</label><select name="account"><option value="">全部</option><?php foreach($accounts as $a): ?><option <?= $account===$a['account_login']?'selected':'' ?>><?= h($a['account_login']) ?></option><?php endforeach; ?></select></div>
       <div><label>开始</label><input type="date" name="date_from" value="<?= h($dateFrom) ?>"></div>
       <div><label>结束</label><input type="date" name="date_to" value="<?= h($dateTo) ?>"></div>
@@ -80,6 +86,11 @@ $latest = $stmt->fetchAll();
 </main>
 <script>
 const daily = <?= json_encode($daily, JSON_UNESCAPED_UNICODE) ?>;
+document.getElementById('customerSelect')?.addEventListener('change', e => {
+  const form = e.target.form;
+  if (form?.account) form.account.value = '';
+  form?.submit();
+});
 const days = daily.map(x=>x.d);
 echarts.init(document.getElementById('dailyChart')).setOption({
   title:{text:'每日已实现盈亏',textStyle:{color:'#eef3ff'}},tooltip:{trigger:'axis'},xAxis:{type:'category',data:days,axisLabel:{color:'#9da9c3'}},yAxis:{type:'value',axisLabel:{color:'#9da9c3'}},

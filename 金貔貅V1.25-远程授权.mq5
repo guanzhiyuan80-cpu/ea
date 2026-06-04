@@ -310,7 +310,8 @@ input string           InpRemoteAuthUrl          = "https://ea.newqidian365.com/
 input int              InpRemoteAuthTimeoutMs    = 5000;                      // ▶ 远程授权超时(毫秒)
 input int              InpRemoteAuthCheckMinutes = 60;                        // ▶ 运行中每几分钟复查授权
 input string           InpRemoteReportUrl        = "https://ea.newqidian365.com/api/trade_report.php"; // ▶ 交易状态上报接口
-input int              InpRemoteReportMinutes    = 10;                        // ▶ 每几分钟上报盈亏状态
+input int              InpRemoteReportMinutes    = 3;                         // ▶ 每几分钟上报盈亏状态
+input int              InpRemoteReportTimeoutMs  = 1500;                      // ▶ 状态上报超时(毫秒)
 input bool             InpRemoteReportHistory    = true;                      // ▶ 同步已平历史成交
 
 input group "=== 时间与交易时段（北京时间） ==="
@@ -1124,7 +1125,8 @@ bool SendRemoteJson(const string url, const string json, string &body, int &http
    string headers = "Content-Type: application/json\r\n";
    StringToCharArray(json, data, 0, StringLen(json), CP_UTF8);
    ResetLastError();
-   httpCode = WebRequest("POST", url, headers, InpRemoteAuthTimeoutMs, data, result, resultHeaders);
+   int timeoutMs = MathMax(500, InpRemoteReportTimeoutMs);
+   httpCode = WebRequest("POST", url, headers, timeoutMs, data, result, resultHeaders);
    if(httpCode == -1)
    {
       body = "WebRequest错误" + IntegerToString(GetLastError());
@@ -1596,10 +1598,6 @@ void OnTimer()
 
 void OnTick()
   {
-
-   MaybeRefreshRemoteAuthorization();
-   MaybeReportRemoteTradeState();
-
    SyncActiveBasketIndex();
    ManageFrozenRotationBaskets();
 
