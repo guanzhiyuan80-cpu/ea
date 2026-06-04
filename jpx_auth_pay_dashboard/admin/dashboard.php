@@ -22,28 +22,44 @@ if ($customer !== '') {
     $accounts = db()->query("SELECT DISTINCT account_login FROM accounts ORDER BY account_login")->fetchAll();
 }
 
-$stmt = db()->prepare("SELECT COUNT(DISTINCT account_login) AS account_count,
+$latestSql = "SELECT tr.customer_name, tr.account_login, tr.report_time AS last_time,
+                     tr.balance, tr.equity, tr.floating_profit, tr.realized_profit, tr.open_positions
+              FROM trade_reports tr
+              INNER JOIN (
+                  SELECT account_login, MAX(report_time) AS last_time
+                  FROM trade_reports $where
+                  GROUP BY account_login
+              ) x ON x.account_login = tr.account_login AND x.last_time = tr.report_time";
+
+$stmt = db()->prepare("SELECT COUNT(*) AS account_count,
                               IFNULL(SUM(realized_profit),0) AS realized_sum,
-                              IFNULL(AVG(equity),0) AS avg_equity,
+                              IFNULL(SUM(balance),0) AS balance_sum,
                               IFNULL(SUM(floating_profit),0) AS floating_sum
-                       FROM trade_reports $where");
+                       FROM ($latestSql) latest_rows");
 $stmt->execute($params);
 $kpi = $stmt->fetch();
 
-$stmt = db()->prepare("SELECT DATE(report_time) AS d, SUM(realized_profit) AS realized, SUM(floating_profit) AS floating
-                       FROM trade_reports $where GROUP BY DATE(report_time) ORDER BY d");
+$dailySql = "SELECT tr.account_login, DATE(tr.report_time) AS d,
+                    tr.realized_profit, tr.floating_profit
+             FROM trade_reports tr
+             INNER JOIN (
+                 SELECT account_login, DATE(report_time) AS d, MAX(report_time) AS last_time
+                 FROM trade_reports $where
+                 GROUP BY account_login, DATE(report_time)
+             ) x ON x.account_login = tr.account_login
+                AND x.d = DATE(tr.report_time)
+                AND x.last_time = tr.report_time";
+
+$stmt = db()->prepare("SELECT d, IFNULL(SUM(realized_profit),0) AS realized, IFNULL(SUM(floating_profit),0) AS floating
+                       FROM ($dailySql) daily_rows GROUP BY d ORDER BY d");
 $stmt->execute($params);
 $daily = $stmt->fetchAll();
+$kpi['realized_sum'] = 0.0;
+foreach ($daily as $row) {
+    $kpi['realized_sum'] += (float)$row['realized'];
+}
 
-$stmt = db()->prepare("SELECT customer_name, account_login,
-                              MAX(report_time) AS last_time,
-                              SUBSTRING_INDEX(GROUP_CONCAT(balance ORDER BY report_time DESC), ',', 1) AS balance,
-                              SUBSTRING_INDEX(GROUP_CONCAT(equity ORDER BY report_time DESC), ',', 1) AS equity,
-                              SUBSTRING_INDEX(GROUP_CONCAT(floating_profit ORDER BY report_time DESC), ',', 1) AS floating_profit,
-                              SUBSTRING_INDEX(GROUP_CONCAT(open_positions ORDER BY report_time DESC), ',', 1) AS open_positions
-                       FROM trade_reports $where
-                       GROUP BY customer_name, account_login
-                       ORDER BY customer_name, account_login");
+$stmt = db()->prepare("$latestSql ORDER BY customer_name, account_login");
 $stmt->execute($params);
 $latest = $stmt->fetchAll();
 ?><!doctype html>
@@ -66,7 +82,7 @@ $latest = $stmt->fetchAll();
       <div class="kpi"><div class="muted">账号数</div><div class="num"><?= (int)$kpi['account_count'] ?></div></div>
       <div class="kpi"><div class="muted">已实现盈亏</div><div class="num"><?= number_format((float)$kpi['realized_sum'],2) ?></div></div>
       <div class="kpi"><div class="muted">浮动盈亏合计</div><div class="num"><?= number_format((float)$kpi['floating_sum'],2) ?></div></div>
-      <div class="kpi"><div class="muted">平均净值</div><div class="num"><?= number_format((float)$kpi['avg_equity'],2) ?></div></div>
+      <div class="kpi"><div class="muted">真实余额合计</div><div class="num"><?= number_format((float)$kpi['balance_sum'],2) ?></div></div>
     </div>
   </section>
   <section class="grid" style="margin-top:18px;grid-template-columns:1fr 1fr">
