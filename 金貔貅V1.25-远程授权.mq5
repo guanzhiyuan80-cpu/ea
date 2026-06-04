@@ -308,7 +308,7 @@ enum HEDGE_MODE
 #define REMOTE_AUTH_CHECK_MINUTES   60
 #define REMOTE_REPORT_URL           "https://ea.newqidian365.com/api/trade_report.php"
 #define REMOTE_REPORT_MINUTES       3
-#define REMOTE_REPORT_TIMEOUT_MS    1500
+#define REMOTE_REPORT_TIMEOUT_MS    3000
 #define REMOTE_REPORT_HISTORY       true
 
 input group "=== 基础设置 ==="
@@ -566,6 +566,7 @@ datetime         g_lastRemoteAuthCheck = 0;   // 上次远程授权检查时间
 bool             g_remoteAuthAlerted = false; // 授权失效报警去重
 datetime         g_lastRemoteReport = 0;      // 上次盈亏状态上报时间
 string           g_remoteReportError = "";    // 上报错误
+int              g_remoteReportFailCount = 0; // 连续上报失败次数
 datetime         g_lastRemoteAlert = 0;        // 运行中远程异常报警节流
 bool             g_remoteRuntimeWarning = false; // 运行中远程异常醒目提示
 string           g_remoteRuntimeWarningText = "";
@@ -696,7 +697,7 @@ void   MaybeRefreshRemoteAuthorization();
 void   MaybeReportRemoteTradeState();
 bool   ReportRemoteTradeSnapshot();
 void   ReportRemoteTradeHistory();
-bool   SendRemoteJson(const string url, const string json, string &body, int &httpCode);
+bool   SendRemoteJson(const string url, const string json, string &body, int &httpCode, int &lastError);
 string JsonEscape(const string value);
 string FormatServerTime(const datetime value);
 string DealTypeToText(const long type);
@@ -1127,10 +1128,11 @@ string DealEntryToText(const long entry)
    return IntegerToString((int)entry);
 }
 
-bool SendRemoteJson(const string url, const string json, string &body, int &httpCode)
+bool SendRemoteJson(const string url, const string json, string &body, int &httpCode, int &lastError)
 {
    body = "";
    httpCode = 0;
+   lastError = 0;
    if(url == "") return false;
 
    char data[];
@@ -1143,7 +1145,8 @@ bool SendRemoteJson(const string url, const string json, string &body, int &http
    httpCode = WebRequest("POST", url, headers, timeoutMs, data, result, resultHeaders);
    if(httpCode == -1)
    {
-      body = "WebRequest错误" + IntegerToString(GetLastError());
+      lastError = GetLastError();
+      body = "";
       return false;
    }
    body = CharArrayToString(result, 0, -1, CP_UTF8);
@@ -1275,15 +1278,24 @@ bool ReportRemoteTradeSnapshot()
 
    string body;
    int httpCode = 0;
-   bool ok = SendRemoteJson(REMOTE_REPORT_URL, json, body, httpCode);
+   int lastError = 0;
+   bool ok = SendRemoteJson(REMOTE_REPORT_URL, json, body, httpCode, lastError);
    if(!ok)
    {
-      g_remoteReportError = StringFormat("交易状态上报失败: HTTP=%d %s", httpCode, body);
-      SetRemoteRuntimeWarning(g_remoteReportError, true);
+      g_remoteReportFailCount++;
+      if(httpCode == -1)
+         g_remoteReportError = StringFormat("交易状态上报失败: WebRequest错误=%d 连续%d次", lastError, g_remoteReportFailCount);
+      else
+         g_remoteReportError = StringFormat("交易状态上报失败: HTTP=%d %s 连续%d次", httpCode, body, g_remoteReportFailCount);
+
+      Print(g_remoteReportError);
+      if(g_remoteReportFailCount >= 3)
+         SetRemoteRuntimeWarning(g_remoteReportError, true);
       return false;
    }
 
    g_remoteReportError = "";
+   g_remoteReportFailCount = 0;
    if(!g_remoteRuntimeWarning || StringFind(g_remoteRuntimeWarningText, "上报") >= 0)
       ClearRemoteRuntimeWarning();
    return true;
@@ -1341,10 +1353,14 @@ void ReportRemoteTradeHistory()
 
       string body;
       int httpCode = 0;
-      bool ok = SendRemoteJson(historyUrl, json, body, httpCode);
+      int lastError = 0;
+      bool ok = SendRemoteJson(historyUrl, json, body, httpCode, lastError);
       if(!ok)
       {
-         SetRemoteRuntimeWarning(StringFormat("历史成交上报失败: HTTP=%d %s", httpCode, body), true);
+         if(httpCode == -1)
+            PrintFormat("历史成交上报失败: WebRequest错误=%d", lastError);
+         else
+            PrintFormat("历史成交上报失败: HTTP=%d %s", httpCode, body);
          break;
       }
       if(dealMsc > maxSent) maxSent = dealMsc;
