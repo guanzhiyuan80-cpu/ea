@@ -101,6 +101,19 @@ HMAC_SHA256(account_login|timestamp, API_SHARED_SECRET)
 - `trade_reports`：盈亏快照
 - `trade_history`：成交历史
 
+真实数据库连接可放在 `config/config.local.php`，该文件已被 Git 忽略，不会提交密码。示例：
+
+```php
+<?php
+return [
+    'DB_HOST' => '你的数据库IP',
+    'DB_PORT' => 3306,
+    'DB_NAME' => '你的库名',
+    'DB_USER' => '你的用户名',
+    'DB_PASS' => '你的密码',
+];
+```
+
 ## 导入旧 build 授权数据
 
 旧 `jinpixiu.licenses` 表按交易账号唯一导入：
