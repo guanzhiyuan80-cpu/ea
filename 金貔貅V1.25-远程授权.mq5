@@ -306,7 +306,7 @@ enum HEDGE_MODE
 input group "=== 基础设置 ==="
 input string           InpPresetName             = DEF_PRESET_NAME;           // ▶ 策略预设名称
 input long             InpMagicNumber            = DEF_MAGIC_NUMBER;          // ▶ EA唯一标识号(Magic)
-input string           InpRemoteAuthUrl          = "http://weixin.newqidian365.com/jpx_auth_pay_dashboard/api/verify.php"; // ▶ 远程授权接口
+input string           InpRemoteAuthUrl          = "https://ea.newqidian365.com/api/verify.php"; // ▶ 远程授权接口
 input int              InpRemoteAuthTimeoutMs    = 5000;                      // ▶ 远程授权超时(毫秒)
 input int              InpRemoteAuthCheckMinutes = 60;                        // ▶ 运行中每几分钟复查授权
 

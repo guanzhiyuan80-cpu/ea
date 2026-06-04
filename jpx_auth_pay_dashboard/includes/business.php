@@ -49,6 +49,7 @@ function complete_paid_order(string $orderNo, string $transactionId = ''): ?arra
             throw new RuntimeException('账号不存在');
         }
 
+        $newExpiry = add_month_from_expiry($account['expires_at'] ?? null);
         $stmt = $pdo->prepare("UPDATE accounts
             SET expires_at = ?, last_paid_at = NOW(), updated_at = NOW()
             WHERE id = ?");
