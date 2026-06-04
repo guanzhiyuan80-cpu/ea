@@ -39,7 +39,7 @@ $stmt = db()->prepare("SELECT COUNT(*) AS account_count,
 $stmt->execute($params);
 $kpi = $stmt->fetch();
 
-$dailySql = "SELECT tr.account_login, DATE(tr.report_time) AS d,
+$dailySql = "SELECT tr.customer_name, tr.account_login, DATE(tr.report_time) AS d,
                     tr.realized_profit, tr.floating_profit
              FROM trade_reports tr
              INNER JOIN (
@@ -62,6 +62,45 @@ foreach ($daily as $row) {
 $stmt = db()->prepare("$latestSql ORDER BY customer_name, account_login");
 $stmt->execute($params);
 $latest = $stmt->fetchAll();
+
+$groupTitle = '';
+$groupLabels = [];
+$groupRealized = [];
+$groupFloating = [];
+if ($account !== '') {
+    $groupTitle = '账号盈亏走势：' . $account;
+    foreach ($daily as $row) {
+        $groupLabels[] = $row['d'];
+        $groupRealized[] = round((float)$row['realized'], 2);
+        $groupFloating[] = round((float)$row['floating'], 2);
+    }
+} else {
+    $groupKey = $customer !== '' ? 'account_login' : 'customer_name';
+    $groupTitle = $customer !== '' ? '账号盈亏对比' : '用户盈亏对比';
+    $stmt = db()->prepare("SELECT $groupKey AS label, IFNULL(SUM(realized_profit),0) AS realized
+                           FROM ($dailySql) daily_rows GROUP BY $groupKey ORDER BY $groupKey");
+    $stmt->execute($params);
+    $realizedByLabel = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $label = (string)$row['label'];
+        $realizedByLabel[$label] = (float)$row['realized'];
+    }
+    $stmt = db()->prepare("SELECT $groupKey AS label, IFNULL(SUM(floating_profit),0) AS floating
+                           FROM ($latestSql) latest_rows GROUP BY $groupKey ORDER BY $groupKey");
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll() as $row) {
+        $label = (string)$row['label'];
+        $groupLabels[] = $label;
+        $groupRealized[] = round($realizedByLabel[$label] ?? 0.0, 2);
+        $groupFloating[] = round((float)$row['floating'], 2);
+        unset($realizedByLabel[$label]);
+    }
+    foreach ($realizedByLabel as $label => $value) {
+        $groupLabels[] = $label;
+        $groupRealized[] = round((float)$value, 2);
+        $groupFloating[] = 0.0;
+    }
+}
 ?><!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>盈亏大屏</title><link rel="stylesheet" href="../assets/css/app.css"><script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script></head>
@@ -85,6 +124,10 @@ $latest = $stmt->fetchAll();
       <div class="kpi"><div class="muted">真实余额合计</div><div class="num"><?= number_format((float)$kpi['balance_sum'],2) ?></div></div>
     </div>
   </section>
+  <section class="panel" style="margin-top:18px">
+    <h2><?= h($groupTitle) ?></h2>
+    <div class="chart chart-large" id="groupChart"></div>
+  </section>
   <section class="grid" style="margin-top:18px;grid-template-columns:1fr 1fr">
     <div class="chart" id="dailyChart"></div>
     <div class="chart" id="floatingChart"></div>
@@ -102,10 +145,26 @@ $latest = $stmt->fetchAll();
 </main>
 <script>
 const daily = <?= json_encode($daily, JSON_UNESCAPED_UNICODE) ?>;
+const groupLabels = <?= json_encode($groupLabels, JSON_UNESCAPED_UNICODE) ?>;
+const groupRealized = <?= json_encode($groupRealized, JSON_UNESCAPED_UNICODE) ?>;
+const groupFloating = <?= json_encode($groupFloating, JSON_UNESCAPED_UNICODE) ?>;
+const groupTitle = <?= json_encode($groupTitle, JSON_UNESCAPED_UNICODE) ?>;
 document.getElementById('customerSelect')?.addEventListener('change', e => {
   const form = e.target.form;
   if (form?.account) form.account.value = '';
   form?.submit();
+});
+echarts.init(document.getElementById('groupChart')).setOption({
+  title:{text:groupTitle,textStyle:{color:'#eef3ff'}},
+  tooltip:{trigger:'axis'},
+  legend:{top:28,textStyle:{color:'#9da9c3'},data:['已实现盈亏','浮动盈亏']},
+  grid:{top:72,left:58,right:32,bottom:56},
+  xAxis:{type:'category',data:groupLabels,axisLabel:{color:'#9da9c3',interval:0,rotate:groupLabels.length>8?28:0}},
+  yAxis:{type:'value',axisLabel:{color:'#9da9c3'}},
+  series:[
+    {name:'已实现盈亏',type:'bar',data:groupRealized,itemStyle:{color:'#38d07f'}},
+    {name:'浮动盈亏',type:'bar',data:groupFloating,itemStyle:{color:'#3aa7ff'}}
+  ]
 });
 const days = daily.map(x=>x.d);
 echarts.init(document.getElementById('dailyChart')).setOption({
