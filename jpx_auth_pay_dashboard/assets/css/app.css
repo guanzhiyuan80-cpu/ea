@@ -51,4 +51,26 @@ th{color:var(--muted);font-size:13px;background:#101827}
 #qrBox{display:flex;justify-content:center;align-items:center;min-height:230px;background:white;border-radius:8px;margin:14px 0;padding:12px}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px}
 .chart{height:320px;background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.renew-wrap{max-width:820px}
+.renew-search{margin-top:18px}
+.search-line{display:grid;grid-template-columns:1fr auto;gap:10px}
+.empty-state{margin-top:18px;padding:18px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);background:#101827}
+.renew-results{display:grid;gap:12px;margin-top:18px}
+.renew-card{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px}
+.renew-user{font-weight:800;font-size:17px}
+.renew-account{color:var(--muted);font-family:Consolas,monospace;margin-top:4px}
+.renew-meta{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;white-space:nowrap}
 @media(max-width:900px){.grid.cols-4,.form-grid{grid-template-columns:1fr}.topbar{padding:0 14px}.wrap{padding:14px}table{font-size:13px}}
+@media(max-width:640px){
+  .topbar{height:auto;min-height:56px}
+  .brand{font-size:15px}
+  .nav a{padding:7px 10px;font-size:13px}
+  .panel{padding:16px;border-radius:8px}
+  .search-line{grid-template-columns:1fr}
+  .search-line .btn{width:100%;padding:12px}
+  input,textarea,select{font-size:16px}
+  .renew-card{grid-template-columns:1fr;gap:10px}
+  .renew-card .btn{width:100%;padding:12px}
+  .renew-meta{justify-content:space-between;white-space:normal}
+  .modal-card{width:100%;border-radius:10px}
+}
