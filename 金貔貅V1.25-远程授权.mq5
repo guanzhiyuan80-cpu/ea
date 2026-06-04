@@ -303,16 +303,17 @@ enum HEDGE_MODE
 #define DEF_SMC_WEIGHT_EMA  30
 #endif
 
+#define REMOTE_AUTH_URL             "https://ea.newqidian365.com/api/verify.php"
+#define REMOTE_AUTH_TIMEOUT_MS      5000
+#define REMOTE_AUTH_CHECK_MINUTES   60
+#define REMOTE_REPORT_URL           "https://ea.newqidian365.com/api/trade_report.php"
+#define REMOTE_REPORT_MINUTES       3
+#define REMOTE_REPORT_TIMEOUT_MS    1500
+#define REMOTE_REPORT_HISTORY       true
+
 input group "=== 基础设置 ==="
 input string           InpPresetName             = DEF_PRESET_NAME;           // ▶ 策略预设名称
 input long             InpMagicNumber            = DEF_MAGIC_NUMBER;          // ▶ EA唯一标识号(Magic)
-input string           InpRemoteAuthUrl          = "https://ea.newqidian365.com/api/verify.php"; // ▶ 远程授权接口
-input int              InpRemoteAuthTimeoutMs    = 5000;                      // ▶ 远程授权超时(毫秒)
-input int              InpRemoteAuthCheckMinutes = 60;                        // ▶ 运行中每几分钟复查授权
-input string           InpRemoteReportUrl        = "https://ea.newqidian365.com/api/trade_report.php"; // ▶ 交易状态上报接口
-input int              InpRemoteReportMinutes    = 3;                         // ▶ 每几分钟上报盈亏状态
-input int              InpRemoteReportTimeoutMs  = 1500;                      // ▶ 状态上报超时(毫秒)
-input bool             InpRemoteReportHistory    = true;                      // ▶ 同步已平历史成交
 
 input group "=== 时间与交易时段（北京时间） ==="
 input int              InpChinaUtcOffsetHours    = DEF_CN_OFFSET;             // ▶ 北京时区=UTC+8
@@ -1125,7 +1126,7 @@ bool SendRemoteJson(const string url, const string json, string &body, int &http
    string headers = "Content-Type: application/json\r\n";
    StringToCharArray(json, data, 0, StringLen(json), CP_UTF8);
    ResetLastError();
-   int timeoutMs = MathMax(500, InpRemoteReportTimeoutMs);
+   int timeoutMs = MathMax(500, REMOTE_REPORT_TIMEOUT_MS);
    httpCode = WebRequest("POST", url, headers, timeoutMs, data, result, resultHeaders);
    if(httpCode == -1)
    {
@@ -1214,7 +1215,7 @@ void RenderRemoteWarning()
 
 bool ReportRemoteTradeSnapshot()
 {
-   if(g_isTester || InpRemoteReportUrl == "") return false;
+   if(g_isTester || REMOTE_REPORT_URL == "") return false;
 
    double bal = AccountInfoDouble(ACCOUNT_BALANCE);
    double eq = AccountInfoDouble(ACCOUNT_EQUITY);
@@ -1261,7 +1262,7 @@ bool ReportRemoteTradeSnapshot()
 
    string body;
    int httpCode = 0;
-   bool ok = SendRemoteJson(InpRemoteReportUrl, json, body, httpCode);
+   bool ok = SendRemoteJson(REMOTE_REPORT_URL, json, body, httpCode);
    if(!ok)
    {
       g_remoteReportError = StringFormat("交易状态上报失败: HTTP=%d %s", httpCode, body);
@@ -1277,12 +1278,12 @@ bool ReportRemoteTradeSnapshot()
 
 void ReportRemoteTradeHistory()
 {
-   if(g_isTester || !InpRemoteReportHistory) return;
-   string historyUrl = InpRemoteReportUrl;
+   if(g_isTester || !REMOTE_REPORT_HISTORY) return;
+   string historyUrl = REMOTE_REPORT_URL;
    int p = StringFind(historyUrl, "trade_report.php");
    if(p >= 0)
       historyUrl = StringSubstr(historyUrl, 0, p) + "trade_history.php";
-   if(historyUrl == InpRemoteReportUrl) return;
+   if(historyUrl == REMOTE_REPORT_URL) return;
 
    string gvName = "JPX_LAST_DEAL_MSC_" + IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + IntegerToString((int)InpMagicNumber);
    if(g_lastHistoryDealMsc <= 0 && GlobalVariableCheck(gvName))
@@ -1347,8 +1348,8 @@ void ReportRemoteTradeHistory()
 void MaybeReportRemoteTradeState()
 {
    if(g_isTester) return;
-   if(InpRemoteReportMinutes <= 0) return;
-   if(g_lastRemoteReport > 0 && TimeCurrent() - g_lastRemoteReport < InpRemoteReportMinutes * 60)
+   if(REMOTE_REPORT_MINUTES <= 0) return;
+   if(g_lastRemoteReport > 0 && TimeCurrent() - g_lastRemoteReport < REMOTE_REPORT_MINUTES * 60)
       return;
    g_lastRemoteReport = TimeCurrent();
    if(ReportRemoteTradeSnapshot())
@@ -1361,7 +1362,7 @@ bool CheckRemoteAuthorization(const bool showAlert)
    g_remoteAuthError = "";
 
    string account = IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN));
-   string url = InpRemoteAuthUrl;
+   string url = REMOTE_AUTH_URL;
    string sep = (StringFind(url, "?") >= 0) ? "&" : "?";
    url += sep + "account_login=" + account + "&version=1.25R&product=XAUUSD";
 
@@ -1369,12 +1370,12 @@ bool CheckRemoteAuthorization(const bool showAlert)
    char result[];
    string resultHeaders = "";
    ResetLastError();
-   int httpCode = WebRequest("GET", url, "", InpRemoteAuthTimeoutMs, data, result, resultHeaders);
+   int httpCode = WebRequest("GET", url, "", REMOTE_AUTH_TIMEOUT_MS, data, result, resultHeaders);
    if(httpCode == -1)
    {
       int err = GetLastError();
       g_remoteAuthStatus = "request_failed";
-      g_remoteAuthError = StringFormat("远程授权请求失败，错误%d。请在MT5 工具-选项-EA交易 中允许URL: %s", err, InpRemoteAuthUrl);
+      g_remoteAuthError = StringFormat("远程授权请求失败，错误%d。请在MT5 工具-选项-EA交易 中允许URL: %s", err, REMOTE_AUTH_URL);
       if(g_remoteAuthorized)
       {
          SetRemoteRuntimeWarning(g_remoteAuthError + "；EA继续按上次授权状态运行", true);
@@ -1431,8 +1432,8 @@ bool CheckRemoteAuthorization(const bool showAlert)
 void MaybeRefreshRemoteAuthorization()
 {
    if(g_isTester) return;
-   if(InpRemoteAuthCheckMinutes <= 0) return;
-   if(g_lastRemoteAuthCheck > 0 && TimeCurrent() - g_lastRemoteAuthCheck < InpRemoteAuthCheckMinutes * 60)
+   if(REMOTE_AUTH_CHECK_MINUTES <= 0) return;
+   if(g_lastRemoteAuthCheck > 0 && TimeCurrent() - g_lastRemoteAuthCheck < REMOTE_AUTH_CHECK_MINUTES * 60)
       return;
 
    bool ok = CheckRemoteAuthorization(false);
@@ -1546,14 +1547,14 @@ int OnInit()
    int timerSec = 0;
    if(InpShowStatusPanel)
       timerSec = MathMax(1, InpPanelRefreshSec);
-   if(!g_isTester && InpRemoteAuthCheckMinutes > 0)
+   if(!g_isTester && REMOTE_AUTH_CHECK_MINUTES > 0)
    {
-      int authTimer = MathMax(30, MathMin(300, InpRemoteAuthCheckMinutes * 60));
+      int authTimer = MathMax(30, MathMin(300, REMOTE_AUTH_CHECK_MINUTES * 60));
       timerSec = (timerSec > 0) ? MathMin(timerSec, authTimer) : authTimer;
    }
-   if(!g_isTester && InpRemoteReportMinutes > 0)
+   if(!g_isTester && REMOTE_REPORT_MINUTES > 0)
    {
-      int reportTimer = MathMax(30, MathMin(300, InpRemoteReportMinutes * 60));
+      int reportTimer = MathMax(30, MathMin(300, REMOTE_REPORT_MINUTES * 60));
       timerSec = (timerSec > 0) ? MathMin(timerSec, reportTimer) : reportTimer;
    }
    if(timerSec > 0)
@@ -5759,4 +5760,5 @@ void DestroyHistoryPanel()
    ObjectsDeleteAll(0, "HYB_HIST_");
    ChartRedraw(0);
 }
+
 
