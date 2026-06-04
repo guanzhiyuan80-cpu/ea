@@ -146,7 +146,7 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 - 触发：当前活动篮子马丁浮亏达到 `InpRotateLockLoss`（默认 500 美分）
 - 动作：按 `InpRotateHedgeRatio`（默认 0.8）开反向锁仓单，旧篮子停止加层并冻结
 - 新篮子：切换到下一个 Magic（`InpMagicNumber + 序号 × InpRotateMagicStep`）并重新独立判断入场，不参考旧篮子方向/浮亏
-- V1.25 新增轮转冷却：锁仓换篮后默认冷却 45 分钟；冷却结束后可要求 `ATR6/ATR14 <= InpRotateCooldownATRResumeRatio`（默认 1.20）并通过首单防追过滤后，才允许新篮子首单
+- V1.25 新增轮转冷却：锁仓换篮后默认冷却 45 分钟；冷却结束后可要求 `ATR5/ATR10 <= InpRotateCooldownATRResumeRatio`（默认 1.20）并通过首单防追过滤后，才允许新篮子首单
 - 旧篮子退出：旧篮子马丁+锁仓总浮盈达到 `InpRotateCloseProfit`（默认 0）自动全平
 - 风险限制：最多 5 个篮子；无空篮子时不再继续轮转，面板提示`轮转篮子已满`
 - 互斥规则：轮转开启时传统 `InpHedgeMode` 对冲/释放逻辑自动暂停，避免先触发传统对冲后阻断换篮子

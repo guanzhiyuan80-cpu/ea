@@ -450,8 +450,8 @@ input double           InpRotateCloseProfit      = 0.0;                      // 
 input int              InpRotateMagicStep        = 1;                        // ▶ 每个新篮子Magic递增步长
 input int              InpRotateCooldownMinutes  = 45;                       // ▶ 轮转锁仓后新篮子冷却分钟(0=关闭)
 input bool             InpRotateCooldownNeedATR  = true;                     // ▶ 冷却结束后需ATR恢复
-input int              InpRotateCooldownATRFastPeriod = 6;                   // ▶ 轮转恢复ATR短周期
-input int              InpRotateCooldownATRSlowPeriod = 14;                  // ▶ 轮转恢复ATR长周期
+input int              InpRotateCooldownATRFastPeriod = 5;                   // ▶ 轮转恢复ATR短周期
+input int              InpRotateCooldownATRSlowPeriod = 10;                  // ▶ 轮转恢复ATR长周期
 input double           InpRotateCooldownATRResumeRatio = 1.20;               // ▶ ATR短/长低于此值才允许新篮子
 input bool             InpRotateCooldownNeedChaseOK = true;                  // ▶ 冷却结束后仍需首单防追通过
 
