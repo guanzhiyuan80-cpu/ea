@@ -597,6 +597,12 @@ string OBJ_LINE2        = "HYB_LINE2";
 string OBJ_LINE3        = "HYB_LINE3";
 string OBJ_LINE4        = "HYB_LINE4";
 string OBJ_LINE5        = "HYB_LINE5";
+string OBJ_ROT_TITLE    = "HYB_ROT_TITLE";
+string OBJ_ROT_B1       = "HYB_ROT_B1";
+string OBJ_ROT_B2       = "HYB_ROT_B2";
+string OBJ_ROT_B3       = "HYB_ROT_B3";
+string OBJ_ROT_B4       = "HYB_ROT_B4";
+string OBJ_ROT_B5       = "HYB_ROT_B5";
 string OBJ_SMC_BG1    = "HYB_SMC_BG1";    // 大周期卡片背景
 string OBJ_SMC_BG2    = "HYB_SMC_BG2";    // 中周期卡片背景
 string OBJ_SMC_BG3    = "HYB_SMC_BG3";    // 小周期卡片背景
@@ -636,7 +642,7 @@ string LOGO_RES         = "::HYB_LOGO_RES";
 int g_panelX = 10;
 int g_panelY = 16;
 int g_panelW = 580;
-int g_panelH = 320;
+int g_panelH = 400;
 
 // Background image source data (loaded once from BMP)
 uint g_bgSrcPixels[];
@@ -3118,6 +3124,94 @@ bool IsActiveMagic(const long magic)
    return (magic == GetActiveMagicNumber());
   }
 
+string GetRotationBasketLabelName(const int index)
+  {
+   if(index == 0) return OBJ_ROT_B1;
+   if(index == 1) return OBJ_ROT_B2;
+   if(index == 2) return OBJ_ROT_B3;
+   if(index == 3) return OBJ_ROT_B4;
+   return OBJ_ROT_B5;
+  }
+
+void PrepareRotationBasketLabel(const string name, const int x, const int y)
+  {
+   if(ObjectFind(0, name) < 0)
+      ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetString(0, name, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+  }
+
+void HideRotationBasketLabels()
+  {
+   if(ObjectFind(0, OBJ_ROT_TITLE) >= 0)
+     {
+      ObjectSetString(0, OBJ_ROT_TITLE, OBJPROP_TEXT, "");
+      ObjectSetInteger(0, OBJ_ROT_TITLE, OBJPROP_YDISTANCE, -9999);
+     }
+   for(int i = 0; i < ROTATE_MAX_BASKETS; ++i)
+     {
+      string name = GetRotationBasketLabelName(i);
+      if(ObjectFind(0, name) < 0) continue;
+      ObjectSetString(0, name, OBJPROP_TEXT, "");
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, -9999);
+     }
+  }
+
+void UpdateRotationBasketLabels(const int y)
+  {
+   if(!InpEnableBasketRotation || !InpShowStatusPanel || !g_panelVisible)
+     {
+      HideRotationBasketLabels();
+      return;
+     }
+
+   PrepareRotationBasketLabel(OBJ_ROT_TITLE, g_panelX + 10, y);
+   ObjectSetString(0, OBJ_ROT_TITLE, OBJPROP_TEXT, "轮转浮亏:");
+   ObjectSetInteger(0, OBJ_ROT_TITLE, OBJPROP_COLOR, C'180,190,210');
+
+   int maxBaskets = GetRotateMaxBaskets();
+   int startX = g_panelX + 92;
+   int itemW = 86;
+   for(int i = 0; i < ROTATE_MAX_BASKETS; ++i)
+     {
+      string name = GetRotationBasketLabelName(i);
+      PrepareRotationBasketLabel(name, startX + i * itemW, y);
+      if(i >= maxBaskets)
+        {
+         ObjectSetString(0, name, OBJPROP_TEXT, "");
+         ObjectSetInteger(0, name, OBJPROP_YDISTANCE, -9999);
+         continue;
+        }
+
+      int mc, hc;
+      double ml, mp, hl, hp;
+      ENUM_MART_DIRECTION d;
+      GetBasketStatsByMagic(GetBasketMagicByIndex(i), mc, ml, mp, hc, hl, hp, d);
+
+      bool hasPosition = (mc > 0 || hc > 0);
+      double totalPnl = mp + hp;
+      string activeMark = (i == g_activeBasketIndex) ? "*" : "";
+      string text = hasPosition
+         ? StringFormat("B%d%s:%+.0f", i + 1, activeMark, totalPnl)
+         : StringFormat("B%d%s:-", i + 1, activeMark);
+
+      color c = C'100,115,135';
+      if(hasPosition)
+         c = (totalPnl >= 0.0) ? C'80,200,120' : C'255,95,95';
+      else if(i == g_activeBasketIndex)
+         c = C'255,200,60';
+
+      ObjectSetString(0, name, OBJPROP_TEXT, text);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, c);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+     }
+  }
+
 double NormalizeVolume(const double lots)
   {
    double vMin  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
@@ -3883,7 +3977,7 @@ void ResolvePanelLayout()
    ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0, chartH);
 
    int desiredW = MathMax(400, InpPanelWidth);
-   int desiredH = MathMax(360, InpPanelHeight);
+   int desiredH = MathMax(395, InpPanelHeight);
    g_panelW = desiredW;
    g_panelH = desiredH;
 
@@ -3894,7 +3988,7 @@ void ResolvePanelLayout()
      }
    if(chartH > 0)
      {
-      int maxH = (int)MathMax(360, chartH - 8);
+      int maxH = (int)MathMax(395, chartH - 8);
       g_panelH = (int)MathMin(g_panelH, maxH);
      }
 
@@ -4629,6 +4723,9 @@ void DestroyStatusPanel()
    ObjectDelete(0, OBJ_SMC_D3A); ObjectDelete(0, OBJ_SMC_D3B); ObjectDelete(0, OBJ_SMC_D3S);
    ObjectDelete(0, OBJ_SMC_TOTAL);
    ObjectDelete(0, OBJ_SMC_OFFSET);
+   ObjectDelete(0, OBJ_ROT_TITLE);
+   ObjectDelete(0, OBJ_ROT_B1); ObjectDelete(0, OBJ_ROT_B2); ObjectDelete(0, OBJ_ROT_B3);
+   ObjectDelete(0, OBJ_ROT_B4); ObjectDelete(0, OBJ_ROT_B5);
    // 删除所有可能的LINE对象 (0-9)，确保无残留
    for(int i = 0; i < 10; i++)
      {
@@ -5014,6 +5111,7 @@ void UpdateStatusPanel()
       ObjectSetString(0, OBJ_LINE3, OBJPROP_TEXT, "");
       ObjectSetInteger(0, OBJ_LINE3, OBJPROP_YDISTANCE, -9999); // 移至屏幕外，彻底避免"Label"显示
      }
+   UpdateRotationBasketLabels(line3Y + 20);
 
    // Line 3 & 4: no longer created, just safety clear
 
