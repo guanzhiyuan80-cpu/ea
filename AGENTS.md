@@ -1,7 +1,7 @@
 # AGENTS.md — 金貔貅 EA 项目上下文
 
 > 本文件供 Codex / Claude / Qoder 等 AI 编程助手快速理解项目背景。
-> 最后更新：2026-06-04，对应版本 V1.25。
+> 最后更新：2026-06-22，对应版本 V1.37（EA 主程序）/ jpx_auth_pay_dashboard（PHP 后台 + 盈亏大屏）。
 
 ---
 
@@ -391,6 +391,170 @@ git push
 | 快速熔断 | 锁开仓不平仓（保留持仓等回调） |
 | 解锁基准 | 最后一层加仓价（不是窗口峰价） |
 | 美分账户 TP 单位 | 美分（不要按美元放大） |
+
+---
+
+## 14. PHP 后台 / Web 大屏（jpx_auth_pay_dashboard）
+
+> EA 主程序之外的另一条主线：管理后台、盈亏大屏、续费支付。
+> 与 `build/` 下的早期最简后台**不是同一套**，请勿混淆。
+
+### 14.1 项目位置与部署
+
+| 项目 | 值 |
+|------|----|
+| 本地源码 | `c:\Users\Administrator\Desktop\源码\jpx_auth_pay_dashboard\` |
+| 生产域名 | `https://ea.newqidian365.com` |
+| 生产服务器 | `root@121.41.12.87` |
+| 生产部署目录 | `/www/wwwroot/ea.newqidian365.com/` |
+| 数据库 | **`jpqea`**（不是 `schema.sql` 字面值 `jpx_auth_pay_dashboard`）|
+| DB 账号 | `jpqea` / `k8fATCMWYHLzCADS` |
+| MySQL 时区 | `+08:00`（北京时间，`CURDATE()` 即北京今天）|
+
+**部署方式**：scp 推送修改后的文件到对应目录（无 CI），如：
+
+```powershell
+scp jpx_auth_pay_dashboard\admin\xxx.php `
+    root@121.41.12.87:/www/wwwroot/ea.newqidian365.com/admin/
+```
+
+AI 助手不掌握服务器密码，scp 由用户在本机交互式输入。
+
+### 14.2 关键文件清单
+
+```
+jpx_auth_pay_dashboard/
+├── index.php                      # 游客续费页（微信浏览器有特殊兜底逻辑）
+├── admin/
+│   ├── accounts.php               # 账号管理（8列表格，账号字段只读）
+│   ├── dashboard.php              # 盈亏大屏（60s自动刷新 + 多图表）
+│   ├── orders.php                 # 续费支付记录列表（2026-05-24 新增）
+│   ├── login.php / logout.php
+├── api/
+│   ├── admin_update_account.php   # 账号编辑接口（仅允许改 customer_name + admin_note）
+│   ├── wxpay_notify.php           # 微信支付回调
+│   └── ...
+├── includes/
+│   ├── business.php / db.php / auth.php / config.php
+├── assets/css/app.css             # 全局样式（带版本号 ?v=YYYYMMDD-N）
+└── schema.sql                     # 仅作参考，实际库名 jpqea
+```
+
+### 14.3 关键数据表（库 jpqea）
+
+| 表 | 用途 | 关键字段 |
+|----|------|----------|
+| `accounts` | MT5 账号档案 | `id, account_login, customer_name, admin_note, expires_at, last_heartbeat_at` |
+| `trade_reports` | EA 实时上报快照 | `account_login, report_time, realized_profit, floating_profit, equity, balance` |
+| `renew_orders` | 续费订单 | `id, account_id, order_no, amount_yuan, months, status, code_url, wx_transaction_id, created_at, paid_at, notify_raw` |
+
+`renew_orders.status` 枚举：`pending` / `paid` / `failed` / `closed`。
+
+### 14.4 大屏（admin/dashboard.php）
+
+- **自动刷新**：`<meta http-equiv="refresh" content="60">`，右上角脉冲徽标 `.refresh-badge` 显示 60s 倒计时
+- **时间口径**：北京时间，`CURDATE()` = 北京今天（不要在 PHP 端再转一遍）
+- **账户最新快照表**：8 列，含"今日已实现"列（取每账号当日最后一条快照的 `realized_profit`）
+- **快照排序**：`usort` 三级 — 当日有上报优先、`today_realized` 降序、`account_login` 次级
+- **日期筛选默认值**：`dateFrom = dateTo = 今天`（不要再改回 -30 days，会破坏单日视图）
+- **每日趋势图（dailyTrend）**：固定取最近 30 天，**不受筛选 date_from/date_to 影响**
+  - PHP 端必须**补全 30 天日期序列**（缺失日补 0），否则单日数据会让 ECharts X 轴退化为单点
+- **三个图表**：
+  - `#dailyChart` 每日已实现盈亏（柱状）
+  - `#floatingChart` 每日浮动盈亏（柱状）
+  - `#combinedChart` 每日盈亏曲线（双线对比，已实现绿 + 浮动蓝，带面积填充）
+- **CSS 关键修复**：`.dashboard-chart-grid .chart-panel.chart { height: 340px; }`
+  - ⚠️ 改回 `auto` 会让容器高度坍缩为 0 → ECharts 不渲染
+- **缓存版本号**：每次改 css 同步升 `?v=YYYYMMDD-N`
+
+### 14.5 账号管理（admin/accounts.php + api/admin_update_account.php）
+
+- 账号字段（`account_login`）**双层只读**：
+  - 前端：`<input class="edit-account readonly-input" readonly>`，金色 monospace 视觉
+  - 后端：`admin_update_account.php` SQL **不更新** `account_login`，仅 `customer_name` + `admin_note`
+- 备注：`<input type="text" class="edit-note">`（不再是 textarea，避免行高错乱）
+- 操作按钮独立列 `.cell-action`，避免心跳时间和保存按钮挤两行
+
+### 14.6 续费支付记录（admin/orders.php，2026-05-24 新增）
+
+- 4 KPI 卡片：订单总数 / 已支付 / 待支付 / 已收款合计 ¥
+- 筛选：关键词（订单号 / 账号 / 用户 / 微信交易号）+ 状态 + 日期范围（默认近 30 天）
+- 列表：最多 500 条，按 `created_at DESC`
+- 状态徽标颜色：`paid → active 绿`、`pending → warning 金`、其余红
+- 中文映射函数 `order_status_label()`：pending→待支付 / paid→已支付 / failed→失败 / closed→已关闭
+
+### 14.7 微信支付现状（重要）
+
+- 当前实现：**NATIVE 扫码**（`trade_type=NATIVE`，返回 `code_url` 生成二维码）
+- **微信内置浏览器无法自跳** `weixin://wxpay/bizpayurl` 协议（被微信主动拒绝）
+- 兜底方案（`index.php` 已实现）：检测到 UA 含 MicroMessenger 时，显示遮罩 `#wechatGuide`，引导用户右上角 → 在浏览器中打开
+- **JSAPI 改造未做**，原因：`wx41723d8ed6ae9877` 是开放平台/小程序 appid，**不能做 JSAPI**
+  - JSAPI 硬性前提：①公众号 appid ②JSAPI 支付权限 ③网页授权域名 ④支付授权目录 ⑤公众号 access_token 体系
+  - 待用户申请到服务号后再改造
+
+### 14.8 已知坑（Web 后台部分）
+
+| 问题 | 解决方案 |
+|------|----------|
+| `nslookup` 显示 198.18.0.x 劫持 IP | nslookup 不读 hosts；用 `ping` / `curl.exe` 验证真实 IP |
+| PowerShell `curl` 被 `Invoke-WebRequest` 别名劫持 | 显式调用 `curl.exe`，否则 `-sS` `-w '%{http_code}'` 报参数错误 |
+| ECharts 容器高度为 0 → 图表空白 | `.chart-panel.chart` 必须显式 `height: 340px` |
+| 单日数据让 X 轴退化为 1 个点（柱被边距吃掉） | PHP 端补全完整日期序列，缺失补 0 |
+| 微信内 weixin:// 协议无法自跳 | 走"在浏览器中打开"兜底引导 |
+| `schema.sql` 库名 `jpx_auth_pay_dashboard` 与生产 `jpqea` 不一致 | 以生产 `jpqea` 为准，不要按 schema.sql 字面执行 |
+
+---
+
+## 15. 变更日志
+
+### 2026-06-22（EA V1.37）
+
+**修复**
+- 修复篮子风控触发平仓后，同一 tick 继续执行后续加层逻辑的问题。
+- `ManageMartBasketTP` / `CheckMartHardSL` / `ManageMartTrailing` / `ManageHedgeRelease` 改为返回是否已触发平仓。
+- `OnTick` 在 TP、硬止损、追踪止损、对冲止盈触发平仓后立即返回，避免异步批量平仓期间又开新层。
+- 本地授权版与远程授权版同步更新，版本号升至 V1.37 / V1.37R。
+
+### 2026-05-24（Web 大屏 + 续费记录页）
+
+**新增**
+- `admin/orders.php`（116 行）：续费支付记录页，含 KPI、关键词/状态/日期筛选、订单列表（最多 500 条）
+- `admin/dashboard.php`：每日盈亏曲线大图 `#combinedChart`（双线对比）
+- `admin/dashboard.php`：账户最新快照表新增"今日已实现"列
+- `admin/dashboard.php`：60s 自动刷新 + `.refresh-badge` 倒计时徽标
+- `index.php`：微信浏览器内点续费时显示 `#wechatGuide` 遮罩，引导跳外部浏览器
+- `app.css`：账号表格样式集合（`.readonly-input` / `.edit-note` / `.cell-time` / `.cell-heartbeat` / `.cell-action` / `.btn-sm`）
+- `app.css`：`.wechat-guide` 系列遮罩样式 + `@keyframes wxArrowBounce`
+- `app.css`：`.refresh-badge` + `@keyframes refreshPulse`
+
+**修改**
+- `admin/accounts.php`：表格扩为 8 列，账号字段 readonly + 金色 monospace，备注改单行 input，操作按钮独立列
+- `admin/dashboard.php`：`dateFrom` 默认值从 `-30 days` 改为今天
+- `admin/dashboard.php`：新增 `dailyTrend` 查询（固定 30 天）+ PHP 端补全日期序列（缺失补 0）
+- `admin/dashboard.php`：`usort` 按 `today_realized` 降序排序快照列表
+- `admin/accounts.php` / `admin/dashboard.php` / `admin/orders.php` 导航栏统一加入「续费记录」入口
+- `api/admin_update_account.php`：SQL 移除 `account_login` 字段更新（账号双层只读保险）
+- `app.css`：`.dashboard-chart-grid .chart-panel.chart` 高度 `auto` → `340px`（修复图表空白）
+- CSS 缓存版本号升至 `?v=20260524-5`
+
+**修复**
+- hosts 文件 fake-IP 劫持（部分线路 `198.18.0.x`）→ ping/curl.exe 已确认真实 IP `121.41.12.87`
+- 大屏"每日已实现 / 每日浮动"两个小图空白：双重根因（CSS 容器高度 0 + 数据库仅 1 天数据）
+
+**部署文件清单**（需 scp 推送至 `/www/wwwroot/ea.newqidian365.com/`）
+```
+admin/orders.php             （新增）
+admin/accounts.php           （nav + 表格）
+admin/dashboard.php          （nav + 多处）
+index.php                    （微信引导）
+api/admin_update_account.php （后端加固）
+assets/css/app.css           （样式集合）
+```
+
+**未完成 / 后续**
+- JSAPI 微信支付改造：等待用户申请到**公众号** appid 后再做
+- 续费记录页可考虑加导出 CSV 功能
+- 大屏数据当前只有 1 天历史，30 天趋势图待数据积累后才有意义
 
 ---
 
