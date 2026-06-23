@@ -1,7 +1,7 @@
 # AGENTS.md — 金貔貅 EA 项目上下文
 
 > 本文件供 Codex / Claude / Qoder 等 AI 编程助手快速理解项目背景。
-> 最后更新：2026-06-22，对应版本 V1.37（EA 主程序）/ jpx_auth_pay_dashboard（PHP 后台 + 盈亏大屏）。
+> 最后更新：2026-06-23，对应版本 V1.38（EA 主程序）/ jpx_auth_pay_dashboard（PHP 后台 + 盈亏大屏）。
 
 ---
 
@@ -514,6 +514,16 @@ jpx_auth_pay_dashboard/
 - `ManageMartBasketTP` / `CheckMartHardSL` / `ManageMartTrailing` / `ManageHedgeRelease` 改为返回是否已触发平仓。
 - `OnTick` 在 TP、硬止损、追踪止损、对冲止盈触发平仓后立即返回，避免异步批量平仓期间又开新层。
 - 本地授权版与远程授权版同步更新，版本号升至 V1.37 / V1.37R。
+
+### 2026-06-23（EA V1.38）
+
+**新增**
+- 轮转首单同向风险限制：`InpRotateMaxSameDirection` 默认 5，同方向仍持有马丁仓位的轮转篮子达到上限时，禁止新篮子继续开同方向首单。
+- 轮转同价区间限制：`InpRotateSameDirMinGap` 默认 1500 美分，若已有同方向轮转篮子的马丁加权均价距离当前价格不足阈值，禁止新篮子在同价区继续开同方向首单。
+
+**说明**
+- 该限制只作用于轮转新篮子首单，不影响已有篮子加层、平仓、锁仓和风控退出。
+- 触发限制时，面板未建仓原因显示`轮转同向限制`或`轮转同价限制`。
 
 ### 2026-05-24（Web 大屏 + 续费记录页）
 
