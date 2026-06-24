@@ -26,10 +26,10 @@ $latestSql = "SELECT tr.customer_name, tr.account_login, tr.report_time AS last_
                      tr.balance, tr.equity, tr.floating_profit, tr.realized_profit, tr.open_positions
               FROM trade_reports tr
               INNER JOIN (
-                  SELECT account_login, MAX(report_time) AS last_time
+                  SELECT account_login, MAX(id) AS last_id
                   FROM trade_reports $where
                   GROUP BY account_login
-              ) x ON x.account_login = tr.account_login AND x.last_time = tr.report_time";
+              ) x ON x.last_id = tr.id";
 
 $stmt = db()->prepare("SELECT COUNT(*) AS account_count,
                               IFNULL(SUM(realized_profit),0) AS realized_sum,
@@ -40,24 +40,38 @@ $stmt = db()->prepare("SELECT COUNT(*) AS account_count,
 $stmt->execute($params);
 $kpi = $stmt->fetch();
 
-$dailySql = "SELECT tr.customer_name, tr.account_login, DATE(tr.report_time) AS d,
-                    tr.realized_profit, tr.floating_profit
-             FROM trade_reports tr
-             INNER JOIN (
-                 SELECT account_login, DATE(report_time) AS d, MAX(report_time) AS last_time
-                 FROM trade_reports $where
-                 GROUP BY account_login, DATE(report_time)
-             ) x ON x.account_login = tr.account_login
-                AND x.d = DATE(tr.report_time)
-                AND x.last_time = tr.report_time";
+$dailyDeltaSql = "SELECT l.customer_name, l.account_login, b.d,
+                         l.realized_profit AS realized,
+                         l.floating_profit AS floating_current,
+                         (l.balance - f.balance) AS balance_delta,
+                         (l.equity - f.equity) AS equity_delta,
+                         (l.floating_profit - f.floating_profit) AS floating_delta
+                  FROM (
+                      SELECT account_login, DATE(report_time) AS d, MIN(id) AS first_id, MAX(id) AS last_id
+                      FROM trade_reports $where
+                      GROUP BY account_login, DATE(report_time)
+                  ) b
+                  JOIN trade_reports f ON f.id = b.first_id
+                  JOIN trade_reports l ON l.id = b.last_id";
 
-$stmt = db()->prepare("SELECT d, IFNULL(SUM(realized_profit),0) AS realized, IFNULL(SUM(floating_profit),0) AS floating
-                       FROM ($dailySql) daily_rows GROUP BY d ORDER BY d");
+$stmt = db()->prepare("SELECT d,
+                              IFNULL(SUM(realized),0) AS realized,
+                              IFNULL(SUM(floating_current),0) AS floating,
+                              IFNULL(SUM(balance_delta),0) AS balance_delta,
+                              IFNULL(SUM(equity_delta),0) AS equity_delta,
+                              IFNULL(SUM(floating_delta),0) AS floating_delta
+                       FROM ($dailyDeltaSql) daily_rows GROUP BY d ORDER BY d");
 $stmt->execute($params);
 $daily = $stmt->fetchAll();
 $kpi['realized_sum'] = 0.0;
+$kpi['balance_delta_sum'] = 0.0;
+$kpi['equity_delta_sum'] = 0.0;
+$kpi['floating_delta_sum'] = 0.0;
 foreach ($daily as $row) {
     $kpi['realized_sum'] += (float)$row['realized'];
+    $kpi['balance_delta_sum'] += (float)$row['balance_delta'];
+    $kpi['equity_delta_sum'] += (float)$row['equity_delta'];
+    $kpi['floating_delta_sum'] += (float)$row['floating_delta'];
 }
 
 $stmt = db()->prepare("$latestSql ORDER BY customer_name, account_login");
@@ -68,15 +82,39 @@ $latest = $stmt->fetchAll();
 $stmt = db()->prepare("SELECT tr.account_login, tr.realized_profit AS today_realized
                        FROM trade_reports tr
                        INNER JOIN (
-                           SELECT account_login, MAX(report_time) AS lt
+                           SELECT account_login, MAX(id) AS last_id
                            FROM trade_reports
                            WHERE DATE(report_time) = CURDATE()
                            GROUP BY account_login
-                       ) m ON m.account_login = tr.account_login AND m.lt = tr.report_time");
+                       ) m ON m.last_id = tr.id");
 $stmt->execute();
 $todayRealizedMap = [];
 foreach ($stmt->fetchAll() as $row) {
     $todayRealizedMap[$row['account_login']] = (float)$row['today_realized'];
+}
+
+$stmt = db()->prepare("SELECT l.account_login,
+                              l.realized_profit AS today_realized,
+                              (l.balance - f.balance) AS balance_delta,
+                              (l.equity - f.equity) AS equity_delta,
+                              (l.floating_profit - f.floating_profit) AS floating_delta
+                       FROM (
+                           SELECT account_login, MIN(id) AS first_id, MAX(id) AS last_id
+                           FROM trade_reports
+                           WHERE DATE(report_time) = CURDATE()
+                           GROUP BY account_login
+                       ) b
+                       JOIN trade_reports f ON f.id = b.first_id
+                       JOIN trade_reports l ON l.id = b.last_id");
+$stmt->execute();
+$todayDeltaMap = [];
+foreach ($stmt->fetchAll() as $row) {
+    $todayDeltaMap[$row['account_login']] = [
+        'realized' => (float)$row['today_realized'],
+        'balance_delta' => (float)$row['balance_delta'],
+        'equity_delta' => (float)$row['equity_delta'],
+        'floating_delta' => (float)$row['floating_delta'],
+    ];
 }
 
 // 总盈利（纯盈利）= 全账号当前净值 − 净入金（入金出金流水真实值）
@@ -129,10 +167,10 @@ foreach ($stmt->fetchAll() as $row) {
 $stmt = db()->prepare("SELECT IFNULL(SUM(tr.equity),0) AS latest_equity
     FROM trade_reports tr
     INNER JOIN (
-        SELECT account_login, MAX(report_time) AS last_time
+        SELECT account_login, MAX(id) AS last_id
         FROM trade_reports $totalProfitWhere
         GROUP BY account_login
-    ) m ON m.account_login = tr.account_login AND m.last_time = tr.report_time");
+    ) m ON m.last_id = tr.id");
 $stmt->execute($totalProfitParams);
 $latestEquityAllTime = (float)$stmt->fetch()['latest_equity'];
 unset($stmt);
@@ -144,18 +182,24 @@ $trendParams = [];
 if ($customer !== '') { $trendWhere .= ' AND customer_name = ?'; $trendParams[] = $customer; }
 if ($account !== '') { $trendWhere .= ' AND account_login = ?'; $trendParams[] = $account; }
 
-$trendSql = "SELECT tr.account_login, DATE(tr.report_time) AS d,
-                    tr.realized_profit, tr.floating_profit
-             FROM trade_reports tr
-             INNER JOIN (
-                 SELECT account_login, DATE(report_time) AS d, MAX(report_time) AS last_time
-                 FROM trade_reports $trendWhere
-                 GROUP BY account_login, DATE(report_time)
-             ) x ON x.account_login = tr.account_login
-                AND x.d = DATE(tr.report_time)
-                AND x.last_time = tr.report_time";
-$stmt = db()->prepare("SELECT d, IFNULL(SUM(realized_profit),0) AS realized, IFNULL(SUM(floating_profit),0) AS floating
-                       FROM ($trendSql) tr_rows GROUP BY d ORDER BY d");
+$trendDeltaSql = "SELECT l.account_login, l.customer_name, b.d,
+                         l.realized_profit AS realized,
+                         l.floating_profit AS floating_current,
+                         (l.equity - f.equity) AS equity_delta,
+                         (l.floating_profit - f.floating_profit) AS floating_delta
+                  FROM (
+                      SELECT account_login, DATE(report_time) AS d, MIN(id) AS first_id, MAX(id) AS last_id
+                      FROM trade_reports $trendWhere
+                      GROUP BY account_login, DATE(report_time)
+                  ) b
+                  JOIN trade_reports f ON f.id = b.first_id
+                  JOIN trade_reports l ON l.id = b.last_id";
+$stmt = db()->prepare("SELECT d,
+                              IFNULL(SUM(realized),0) AS realized,
+                              IFNULL(SUM(floating_current),0) AS floating,
+                              IFNULL(SUM(equity_delta),0) AS equity_delta,
+                              IFNULL(SUM(floating_delta),0) AS floating_delta
+                       FROM ($trendDeltaSql) tr_rows GROUP BY d ORDER BY d");
 $stmt->execute($trendParams);
 $dailyTrendRaw = $stmt->fetchAll();
 
@@ -169,6 +213,8 @@ for ($i = 29; $i >= 0; $i--) {
         'd' => $d,
         'realized' => isset($dailyTrendMap[$d]) ? (float)$dailyTrendMap[$d]['realized'] : 0.0,
         'floating' => isset($dailyTrendMap[$d]) ? (float)$dailyTrendMap[$d]['floating'] : 0.0,
+        'equity_delta' => isset($dailyTrendMap[$d]) ? (float)$dailyTrendMap[$d]['equity_delta'] : 0.0,
+        'floating_delta' => isset($dailyTrendMap[$d]) ? (float)$dailyTrendMap[$d]['floating_delta'] : 0.0,
     ];
 }
 
@@ -212,10 +258,13 @@ foreach ($latest as $r) {
     if ($info[0] === 'online') $onlineCount++; else $offlineCount++;
     $today = $todayRealizedMap[$r['account_login']] ?? null;
     if ($today !== null) {
+        $delta = $todayDeltaMap[$r['account_login']] ?? ['equity_delta' => 0.0, 'floating_delta' => 0.0];
         $rankList[] = [
             'customer' => (string)$r['customer_name'],
             'account'  => (string)$r['account_login'],
             'today'    => (float)$today,
+            'equity_delta' => (float)$delta['equity_delta'],
+            'floating_delta' => (float)$delta['floating_delta'],
         ];
     }
 }
@@ -232,30 +281,42 @@ foreach ($equityByCustomer as $c => $v) {
     $equityPieData[] = ['name' => $c, 'value' => round($v, 2)];
 }
 usort($rankList, function ($a, $b) { return $b['today'] <=> $a['today']; });
-$rankProfit = array_values(array_filter($rankList, function ($r) { return $r['today'] > 0; }));
+$rankProfit = array_values(array_filter($rankList, function ($r) { return $r['equity_delta'] > 0; }));
+usort($rankProfit, function ($a, $b) { return $b['equity_delta'] <=> $a['equity_delta']; });
 $rankTop = array_slice($rankProfit, 0, 10);
 
 $groupTitle = '';
 $groupLabels = [];
 $groupRealized = [];
 $groupFloating = [];
+$groupEquityDelta = [];
+$groupFloatingDelta = [];
 if ($account !== '') {
     $groupTitle = '账号盈亏走势：' . $account;
     foreach ($daily as $row) {
         $groupLabels[] = $row['d'];
         $groupRealized[] = round((float)$row['realized'], 2);
         $groupFloating[] = round((float)$row['floating'], 2);
+        $groupEquityDelta[] = round((float)$row['equity_delta'], 2);
+        $groupFloatingDelta[] = round((float)$row['floating_delta'], 2);
     }
 } else {
     $groupKey = $customer !== '' ? 'account_login' : 'customer_name';
     $groupTitle = $customer !== '' ? '账号盈亏对比' : '用户盈亏对比';
-    $stmt = db()->prepare("SELECT $groupKey AS label, IFNULL(SUM(realized_profit),0) AS realized
-                           FROM ($dailySql) daily_rows GROUP BY $groupKey ORDER BY $groupKey");
+    $stmt = db()->prepare("SELECT $groupKey AS label,
+                                  IFNULL(SUM(realized),0) AS realized,
+                                  IFNULL(SUM(equity_delta),0) AS equity_delta,
+                                  IFNULL(SUM(floating_delta),0) AS floating_delta
+                           FROM ($dailyDeltaSql) daily_rows GROUP BY $groupKey ORDER BY $groupKey");
     $stmt->execute($params);
     $realizedByLabel = [];
+    $equityDeltaByLabel = [];
+    $floatingDeltaByLabel = [];
     foreach ($stmt->fetchAll() as $row) {
         $label = (string)$row['label'];
         $realizedByLabel[$label] = (float)$row['realized'];
+        $equityDeltaByLabel[$label] = (float)$row['equity_delta'];
+        $floatingDeltaByLabel[$label] = (float)$row['floating_delta'];
     }
     $stmt = db()->prepare("SELECT $groupKey AS label, IFNULL(SUM(floating_profit),0) AS floating
                            FROM ($latestSql) latest_rows GROUP BY $groupKey ORDER BY $groupKey");
@@ -265,12 +326,17 @@ if ($account !== '') {
         $groupLabels[] = $label;
         $groupRealized[] = round($realizedByLabel[$label] ?? 0.0, 2);
         $groupFloating[] = round((float)$row['floating'], 2);
+        $groupEquityDelta[] = round($equityDeltaByLabel[$label] ?? 0.0, 2);
+        $groupFloatingDelta[] = round($floatingDeltaByLabel[$label] ?? 0.0, 2);
         unset($realizedByLabel[$label]);
+        unset($equityDeltaByLabel[$label], $floatingDeltaByLabel[$label]);
     }
     foreach ($realizedByLabel as $label => $value) {
         $groupLabels[] = $label;
         $groupRealized[] = round((float)$value, 2);
         $groupFloating[] = 0.0;
+        $groupEquityDelta[] = round($equityDeltaByLabel[$label] ?? 0.0, 2);
+        $groupFloatingDelta[] = round($floatingDeltaByLabel[$label] ?? 0.0, 2);
     }
 }
 function pnl_class($value): string {
@@ -289,7 +355,7 @@ function fmtUSD($cents): string {
 <meta http-equiv="refresh" content="60">
 <title>金貔貅盈亏大屏</title>
 <link rel="icon" type="image/png" href="../assets/img/logo.png?v=2">
-<link rel="stylesheet" href="../assets/css/app.css?v=20260524-27">
+<link rel="stylesheet" href="../assets/css/app.css?v=20260623-1">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script></head>
 <body class="dashboard-page dashboard-fullscreen">
 <header class="topbar dashboard-topbar dashboard-topbar-flat">
@@ -311,6 +377,8 @@ function fmtUSD($cents): string {
     <aside class="dashboard-side-left">
       <div class="kpi metric-card k-accounts"><div class="muted">账号数</div><div class="num"><?= (int)$kpi['account_count'] ?></div><div class="metric-note">筛选范围 · 在线 <?= (int)$onlineCount ?> / 异常 <?= (int)$offlineCount ?></div></div>
       <div class="kpi metric-card k-realized <?= pnl_class($kpi['realized_sum']) ?>"><div class="muted">已实现盈亏</div><div class="num"><?= fmtUSD($kpi['realized_sum']) ?></div><div class="metric-note">按每日最新快照累计</div></div>
+      <div class="kpi metric-card k-equity-delta <?= pnl_class($kpi['equity_delta_sum']) ?>"><div class="muted">净值变化</div><div class="num"><?= fmtUSD($kpi['equity_delta_sum']) ?></div><div class="metric-note">筛选期首末净值差</div></div>
+      <div class="kpi metric-card k-float-delta <?= pnl_class($kpi['floating_delta_sum']) ?>"><div class="muted">浮动变化</div><div class="num"><?= fmtUSD($kpi['floating_delta_sum']) ?></div><div class="metric-note">浮亏扩大为负</div></div>
       <div class="kpi metric-card k-floating <?= pnl_class($kpi['floating_sum']) ?>"><div class="muted">浮动盈亏合计</div><div class="num"><?= fmtUSD($kpi['floating_sum']) ?></div><div class="metric-note">账号最新快照合计</div></div>
       <div class="kpi metric-card k-balance balance"><div class="muted">结余合计</div><div class="num"><?= fmtUSD($kpi['balance_sum']) ?></div><div class="metric-note">不含浮动净值</div></div>
       <div class="kpi metric-card k-equity"><div class="muted">净值合计</div><div class="num"><?= fmtUSD($kpi['equity_sum']) ?></div><div class="metric-note">结余 + 浮动盈亏</div></div>
@@ -335,12 +403,14 @@ function fmtUSD($cents): string {
       <div class="panel table-panel-fill">
         <h2>账户最新快照 <span class="refresh-badge-inline">在线 <b><?= (int)$onlineCount ?></b> · 异常 <b><?= (int)$offlineCount ?></b></span></h2>
         <div class="table-scroll">
-          <table class="data-table"><thead><tr><th>用户</th><th>账号</th><th>余额</th><th>净值</th><th>实际盈利</th><th>今日已实现</th><th>浮盈亏</th><th>持仓</th><th>EA状态</th></tr></thead><tbody>
-          <?php foreach($latest as $r): $today = $todayRealizedMap[$r['account_login']] ?? null; $eaStatus = ea_status_info($r['last_time'] ?? null); $cap = $capitalByAccount[(string)$r['account_login']] ?? ['deposit_sum' => 0.0, 'withdraw_sum' => 0.0]; $netIn = $cap['deposit_sum'] - $cap['withdraw_sum']; $actual = (float)$r['equity'] - $netIn; ?><tr>
+          <table class="data-table account-snapshot-table"><thead><tr><th>用户</th><th>账号</th><th>余额</th><th>净值</th><th>实际盈利</th><th>今日已实现</th><th>今日净值变化</th><th>浮动变化</th><th>浮盈亏</th><th>持仓</th><th>EA状态</th></tr></thead><tbody>
+          <?php foreach($latest as $r): $today = $todayRealizedMap[$r['account_login']] ?? null; $todayDelta = $todayDeltaMap[$r['account_login']] ?? null; $eaStatus = ea_status_info($r['last_time'] ?? null); $cap = $capitalByAccount[(string)$r['account_login']] ?? ['deposit_sum' => 0.0, 'withdraw_sum' => 0.0]; $netIn = $cap['deposit_sum'] - $cap['withdraw_sum']; $actual = (float)$r['equity'] - $netIn; ?><tr>
             <td><?= h($r['customer_name']) ?></td><td><?= h($r['account_login']) ?></td>
             <td><?= fmtUSD($r['balance']) ?></td><td><?= fmtUSD($r['equity']) ?></td>
             <td class="<?= pnl_class($actual) ?>"><?= fmtUSD($actual) ?></td>
             <td class="<?= $today === null ? 'flat' : pnl_class($today) ?>"><?= $today === null ? '-' : fmtUSD($today) ?></td>
+            <td class="<?= $todayDelta === null ? 'flat' : pnl_class($todayDelta['equity_delta']) ?>"><?= $todayDelta === null ? '-' : fmtUSD($todayDelta['equity_delta']) ?></td>
+            <td class="<?= $todayDelta === null ? 'flat' : pnl_class($todayDelta['floating_delta']) ?>"><?= $todayDelta === null ? '-' : fmtUSD($todayDelta['floating_delta']) ?></td>
             <td class="<?= pnl_class($r['floating_profit']) ?>"><?= fmtUSD($r['floating_profit']) ?></td><td><?= (int)$r['open_positions'] ?></td><td><span class="ea-status <?= h($eaStatus[0]) ?>"><b><?= h($eaStatus[1]) ?></b><small><?= h($eaStatus[2]) ?></small></span></td>
           </tr><?php endforeach; ?>
           </tbody></table>
@@ -358,15 +428,15 @@ function fmtUSD($cents): string {
         <div class="chart chart-fill" id="equityPie"></div>
       </section>
       <section class="panel side-card rank-card">
-        <h3 class="chart-h3">今日盈利 · 榜单 TOP 10</h3>
+        <h3 class="chart-h3">今日净值增长 · TOP 10</h3>
         <ul class="rank-list rank-list-full">
-          <?php if (!$rankTop): ?><li class="rank-empty">暂无盈利账号</li>
+          <?php if (!$rankTop): ?><li class="rank-empty">暂无净值增长账号</li>
           <?php else: foreach ($rankTop as $i => $r): ?>
             <li>
               <span class="rank-no rank-no-<?= $i < 3 ? ($i+1) : 'n' ?>"><?= $i+1 ?></span>
               <span class="rank-cust"><?= h($r['customer']) ?></span>
               <span class="rank-acc"><?= h($r['account']) ?></span>
-              <span class="rank-val pos"><?= fmtUSD($r['today']) ?></span>
+              <span class="rank-val <?= pnl_class($r['equity_delta']) ?>"><?= fmtUSD($r['equity_delta']) ?></span>
             </li>
           <?php endforeach; endif; ?>
         </ul>
@@ -379,6 +449,8 @@ const dailyTrend = <?= json_encode($dailyTrend, JSON_UNESCAPED_UNICODE) ?>;
 const groupLabels = <?= json_encode($groupLabels, JSON_UNESCAPED_UNICODE) ?>;
 const groupRealized = <?= json_encode($groupRealized, JSON_UNESCAPED_UNICODE) ?>;
 const groupFloating = <?= json_encode($groupFloating, JSON_UNESCAPED_UNICODE) ?>;
+const groupEquityDelta = <?= json_encode($groupEquityDelta, JSON_UNESCAPED_UNICODE) ?>;
+const groupFloatingDelta = <?= json_encode($groupFloatingDelta, JSON_UNESCAPED_UNICODE) ?>;
 const balancePie = <?= json_encode($balancePieData, JSON_UNESCAPED_UNICODE) ?>;
 const equityPie = <?= json_encode($equityPieData, JSON_UNESCAPED_UNICODE) ?>;
 const onlineCount = <?= (int)$onlineCount ?>;
@@ -410,27 +482,33 @@ function regChart(id, opt){
 
 regChart('groupChart', {
   backgroundColor:'transparent',
-  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'},formatter:p=>{const it=p[0];return `${it.axisValueLabel}<br/>已实现 <b style="color:#3ddc97">${Number(it.value||0).toLocaleString()}</b>`}},
-  legend:{show:false},
-  grid:{top:30,left:60,right:18,bottom:38,containLabel:false},
+  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'}},
+  legend:{top:0,right:10,textStyle:{color:axisColor,fontSize:12},itemWidth:14,itemHeight:8},
+  grid:{top:38,left:60,right:18,bottom:38,containLabel:false},
   xAxis:{type:'category',data:groupLabels,axisLine:{lineStyle:{color:'rgba(216,172,79,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor,interval:0,rotate:groupLabels.length>6?28:0,fontSize:12}},
   yAxis:{type:'value',axisLabel:{color:axisColor,fontSize:11,formatter:v=>Number(v).toLocaleString()},splitLine:{lineStyle:{color:splitColor}}},
   series:[
-    {name:'已实现',type:'bar',data:groupRealized,barMaxWidth:38,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#5cf1a8'},{offset:1,color:'#1a8a55'}]),borderRadius:[6,6,0,0],shadowColor:'rgba(57,217,138,.35)',shadowBlur:8},label:{show:true,position:'top',color:'#a8f0c8',fontSize:11,fontWeight:600,formatter:p=>p.value>0?Number(p.value).toLocaleString():''}}
+    {name:'已实现',type:'bar',data:groupRealized,barMaxWidth:24,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#5cf1a8'},{offset:1,color:'#1a8a55'}]),borderRadius:[5,5,0,0]}},
+    {name:'净值变化',type:'bar',data:groupEquityDelta,barMaxWidth:24,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#fff1a8'},{offset:1,color:'#b78324'}]),borderRadius:[5,5,0,0]}},
+    {name:'浮动变化',type:'bar',data:groupFloatingDelta,barMaxWidth:24,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#9bdcff'},{offset:1,color:'#276f9b'}]),borderRadius:[5,5,0,0]}}
   ]
 });
 
 const trendDays = dailyTrend.map(x=>String(x.d).slice(5));
 const trendRealized = dailyTrend.map(x=>Number(x.realized||0));
+const trendEquityDelta = dailyTrend.map(x=>Number(x.equity_delta||0));
+const trendFloatingDelta = dailyTrend.map(x=>Number(x.floating_delta||0));
 regChart('combinedChart', {
   backgroundColor:'transparent',
-  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'},formatter:p=>{const it=p[0];return `${it.axisValueLabel}<br/>已实现 <b style="color:#3ddc97">${Number(it.value||0).toLocaleString()}</b>`}},
-  legend:{show:false},
-  grid:{top:24,left:60,right:18,bottom:32},
+  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'}},
+  legend:{top:0,right:10,textStyle:{color:axisColor,fontSize:12},itemWidth:14,itemHeight:8},
+  grid:{top:38,left:60,right:18,bottom:32},
   xAxis:{type:'category',data:trendDays,axisLine:{lineStyle:{color:'rgba(216,172,79,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor,fontSize:11,interval:Math.ceil(trendDays.length/10)}},
   yAxis:{type:'value',axisLabel:{color:axisColor,fontSize:11,formatter:v=>Number(v).toLocaleString()},splitLine:{lineStyle:{color:splitColor}}},
   series:[
-    {name:'已实现',type:'line',smooth:true,symbol:'circle',symbolSize:6,data:trendRealized,lineStyle:{color:'#39d98a',width:2.8},itemStyle:{color:'#39d98a',borderColor:'#0e1422',borderWidth:1.5},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(57,217,138,.42)'},{offset:1,color:'rgba(57,217,138,.02)'}])}}
+    {name:'已实现',type:'line',smooth:true,symbol:'circle',symbolSize:5,data:trendRealized,lineStyle:{color:'#39d98a',width:2.5},itemStyle:{color:'#39d98a',borderColor:'#0e1422',borderWidth:1.5}},
+    {name:'净值变化',type:'line',smooth:true,symbol:'circle',symbolSize:5,data:trendEquityDelta,lineStyle:{color:'#fff1a8',width:2.7},itemStyle:{color:'#fff1a8',borderColor:'#0e1422',borderWidth:1.5},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,241,168,.24)'},{offset:1,color:'rgba(255,241,168,.02)'}])}},
+    {name:'浮动变化',type:'line',smooth:true,symbol:'circle',symbolSize:5,data:trendFloatingDelta,lineStyle:{color:'#42b8ff',width:2.2},itemStyle:{color:'#42b8ff',borderColor:'#0e1422',borderWidth:1.5}}
   ]
 });
 
