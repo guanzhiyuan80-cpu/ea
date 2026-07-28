@@ -1,5 +1,5 @@
 ; === 基础设置 ===
-InpPresetName=趋势对冲马丁
+InpPresetName=青鸾
 InpMagicNumber=26042702
 InpLicenseKey=e2ZtBgQFAnRbEFZ1cxdwFXtk
 ; === 时间与交易时段（北京时间） ===
@@ -115,6 +115,7 @@ InpPanelHeight=374
 InpPanelRefreshSec=2
 ; === 历史交易明细 ===
 InpHistoryDays=15
+
 
 
 
