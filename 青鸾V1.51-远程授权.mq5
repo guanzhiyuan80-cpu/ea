@@ -1,5 +1,5 @@
 ﻿#property copyright "Qingluan EA"
-#property version   "1.50"
+#property version   "1.51"
 #property strict
 
 #include <Trade/Trade.mqh>
@@ -291,10 +291,17 @@ enum HEDGE_MODE
 #define DEF_SMC_WEIGHT_EMA  30
 #endif
 
+#define REMOTE_AUTH_URL             "https://ea.newqidian365.com/api/verify.php"
+#define REMOTE_AUTH_TIMEOUT_MS      5000
+#define REMOTE_AUTH_CHECK_MINUTES   60
+#define REMOTE_REPORT_URL           "https://ea.newqidian365.com/api/trade_report.php"
+#define REMOTE_REPORT_MINUTES       3
+#define REMOTE_REPORT_TIMEOUT_MS    3000
+#define REMOTE_REPORT_HISTORY       true
+
 input group "=== 基础设置 ==="
 input string           InpPresetName             = DEF_PRESET_NAME;           // ▶ 策略预设名称
 input long             InpMagicNumber            = DEF_MAGIC_NUMBER;          // ▶ EA唯一标识号(Magic)
-input string           InpLicenseKey             = "";                        // ▶ 授权码(联系管理员获取)
 
 input group "=== 时间与交易时段（北京时间） ==="
 input int              InpChinaUtcOffsetHours    = DEF_CN_OFFSET;             // ▶ 北京时区=UTC+8
@@ -547,6 +554,20 @@ double           g_todayMaxDrawdown = 0.0;    // 当日最大浮亏追踪
 double           g_todayMaxDDPct = 0.0;       // 当日最大浮亏比追踪
 
 string           g_licenseExpiry = "";        // 授权到期日期
+bool             g_remoteAuthorized = false;  // 远程授权状态
+bool             g_remoteRenewWarning = false;// 远程授权续费提醒
+string           g_remoteAuthStatus = "";     // 远程授权状态文本
+string           g_remoteAuthError = "";      // 远程授权错误
+datetime         g_lastRemoteAuthCheck = 0;   // 上次远程授权检查时间
+bool             g_remoteAuthAlerted = false; // 授权失效报警去重
+datetime         g_lastRemoteReport = 0;      // 上次盈亏状态上报时间
+string           g_remoteReportError = "";    // 上报错误
+int              g_remoteReportFailCount = 0; // 连续上报失败次数
+datetime         g_lastRemoteAlert = 0;        // 运行中远程异常报警节流
+bool             g_remoteRuntimeWarning = false; // 运行中远程异常醒目提示
+string           g_remoteRuntimeWarningText = "";
+long             g_lastHistoryDealMsc = 0;    // 已同步历史成交游标
+long             g_lastFundDealMsc = 0;       // 已同步入金/出金游标
 
 // Panel object names
 string PNL_PREFIX       = "HYB_";
@@ -608,6 +629,8 @@ string OBJ_CHART_BG     = "HYB_CHART_BG";
 string OBJ_LOGO_FRAME   = "HYB_LOGO_FRAME";
 string OBJ_BTN_BG       = "HYB_BTN_BG";
 string OBJ_BTN_TOGGLE   = "HYB_BTN_TOGGLE";
+string OBJ_REMOTE_WARN_BG = "HYB_REMOTE_WARN_BG";
+string OBJ_REMOTE_WARN_TXT = "HYB_REMOTE_WARN_TXT";
 // 速度模式按钮（顶栏右上：稳/中/快）
 string OBJ_BTN_SPEED_S  = "HYB_BTN_SPEED_S";  // 稳 = 0.20
 string OBJ_BTN_SPEED_M  = "HYB_BTN_SPEED_M";  // 中 = 0.15
@@ -682,6 +705,24 @@ bool   IsEntryPrecisionBlocked(const ENUM_POSITION_TYPE side);
 double GetDeepProtectTPFactor(const int layers);
 string GetNewsBlockReason();
 int    GetUs0830DataMinuteBeijing(const MqlDateTime &chinaTime);
+bool   CheckRemoteAuthorization(const bool showAlert);
+void   MaybeRefreshRemoteAuthorization();
+void   MaybeReportRemoteTradeState();
+bool   ReportRemoteTradeSnapshot();
+void   ReportRemoteTradeHistory();
+void   ReportRemoteFundHistory(const string historyUrl);
+bool   SendRemoteJson(const string url, const string json, string &body, int &httpCode, int &lastError);
+string JsonEscape(const string value);
+string FormatServerTime(const datetime value);
+string DealTypeToText(const long type);
+bool   IsFundDealType(const long type);
+string DealEntryToText(const long entry);
+void   SetRemoteRuntimeWarning(const string text, const bool alertNow);
+void   ClearRemoteRuntimeWarning();
+void   RenderRemoteWarning();
+string JsonGetString(const string json, const string key, const string fallback="");
+bool   JsonGetBool(const string json, const string key, const bool fallback=false);
+string NormalizeRemoteExpiry(const string expiresAt);
 
 // ========== 离线授权码验证 ==========
 #define LICENSE_XOR_KEY "JPX2025GoldEA!@#"   // XOR密钥，必须与Python生成工具一致
@@ -992,29 +1033,561 @@ void SetSpeedMode(int mode)
    PrintFormat("[速度切换] 模式=%s | ATR系数=%.4f(基准%.2f)", label, g_effATRCoeff, base);
 }
 
+string JsonGetString(const string json, const string key, const string fallback="")
+{
+   string pattern = "\"" + key + "\"";
+   int p = StringFind(json, pattern);
+   if(p < 0) return fallback;
+   p = StringFind(json, ":", p + StringLen(pattern));
+   if(p < 0) return fallback;
+   p++;
+   while(p < StringLen(json))
+   {
+      ushort ch = StringGetCharacter(json, p);
+      if(ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') break;
+      p++;
+   }
+   if(p >= StringLen(json) || StringGetCharacter(json, p) != '"') return fallback;
+   p++;
+   string out = "";
+   while(p < StringLen(json))
+   {
+      ushort ch = StringGetCharacter(json, p);
+      if(ch == '"') break;
+      if(ch == '\\' && p + 1 < StringLen(json))
+      {
+         p++;
+         ch = StringGetCharacter(json, p);
+      }
+      out += CharToString((uchar)ch);
+      p++;
+   }
+   return out;
+}
+
+bool JsonGetBool(const string json, const string key, const bool fallback=false)
+{
+   string pattern = "\"" + key + "\"";
+   int p = StringFind(json, pattern);
+   if(p < 0) return fallback;
+   p = StringFind(json, ":", p + StringLen(pattern));
+   if(p < 0) return fallback;
+   p++;
+   while(p < StringLen(json))
+   {
+      ushort ch = StringGetCharacter(json, p);
+      if(ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') break;
+      p++;
+   }
+   string tail = StringSubstr(json, p, 5);
+   if(StringFind(tail, "true") == 0) return true;
+   if(StringFind(tail, "false") == 0) return false;
+   return fallback;
+}
+
+string NormalizeRemoteExpiry(const string expiresAt)
+{
+   if(StringLen(expiresAt) >= 10)
+   {
+      string y = StringSubstr(expiresAt, 0, 4);
+      string m = StringSubstr(expiresAt, 5, 2);
+      string d = StringSubstr(expiresAt, 8, 2);
+      if(StringToInteger(y) > 0 && StringToInteger(m) > 0 && StringToInteger(d) > 0)
+         return y + m + d;
+   }
+   return expiresAt;
+}
+
+string JsonEscape(const string value)
+{
+   string out = "";
+   for(int i = 0; i < StringLen(value); ++i)
+   {
+      ushort ch = StringGetCharacter(value, i);
+      if(ch == '"') out += "\\\"";
+      else if(ch == '\\') out += "\\\\";
+      else if(ch == '\n') out += "\\n";
+      else if(ch == '\r') out += "\\r";
+      else if(ch == '\t') out += "\\t";
+      else out += ShortToString(ch);
+   }
+   return out;
+}
+
+string FormatServerTime(const datetime value)
+{
+   string text = TimeToString(value, TIME_DATE | TIME_SECONDS);
+   StringReplace(text, ".", "-");
+   return text;
+}
+
+string DealTypeToText(const long type)
+{
+   if(type == DEAL_TYPE_BUY) return "buy";
+   if(type == DEAL_TYPE_SELL) return "sell";
+   if(type == DEAL_TYPE_BALANCE) return "balance";
+   if(type == DEAL_TYPE_CREDIT) return "credit";
+   if(type == DEAL_TYPE_CHARGE) return "charge";
+   if(type == DEAL_TYPE_CORRECTION) return "correction";
+   if(type == DEAL_TYPE_BONUS) return "bonus";
+   if(type == DEAL_TYPE_COMMISSION) return "commission";
+   return IntegerToString((int)type);
+}
+
+bool IsFundDealType(const long type)
+{
+   return (type == DEAL_TYPE_BALANCE
+      || type == DEAL_TYPE_CREDIT
+      || type == DEAL_TYPE_CHARGE
+      || type == DEAL_TYPE_CORRECTION
+      || type == DEAL_TYPE_BONUS);
+}
+
+string DealEntryToText(const long entry)
+{
+   if(entry == DEAL_ENTRY_IN) return "in";
+   if(entry == DEAL_ENTRY_OUT) return "out";
+   if(entry == DEAL_ENTRY_INOUT) return "inout";
+   if(entry == DEAL_ENTRY_OUT_BY) return "out_by";
+   return IntegerToString((int)entry);
+}
+
+bool SendRemoteJson(const string url, const string json, string &body, int &httpCode, int &lastError)
+{
+   body = "";
+   httpCode = 0;
+   lastError = 0;
+   if(url == "") return false;
+
+   char data[];
+   char result[];
+   string resultHeaders = "";
+   string headers = "Content-Type: application/json\r\n";
+   StringToCharArray(json, data, 0, StringLen(json), CP_UTF8);
+   ResetLastError();
+   int timeoutMs = MathMax(500, REMOTE_REPORT_TIMEOUT_MS);
+   httpCode = WebRequest("POST", url, headers, timeoutMs, data, result, resultHeaders);
+   if(httpCode == -1)
+   {
+      lastError = GetLastError();
+      body = "";
+      return false;
+   }
+   body = CharArrayToString(result, 0, -1, CP_UTF8);
+   return (httpCode >= 200 && httpCode < 300);
+}
+
+void SetRemoteRuntimeWarning(const string text, const bool alertNow)
+{
+   g_remoteRuntimeWarning = true;
+   g_remoteRuntimeWarningText = text;
+   Print(text);
+   datetime now = TimeCurrent();
+   if(alertNow && (g_lastRemoteAlert == 0 || now - g_lastRemoteAlert >= 300))
+   {
+      Alert(text);
+      g_lastRemoteAlert = now;
+   }
+   RenderRemoteWarning();
+}
+
+void ClearRemoteRuntimeWarning()
+{
+   g_remoteRuntimeWarning = false;
+   g_remoteRuntimeWarningText = "";
+   ObjectDelete(0, OBJ_REMOTE_WARN_BG);
+   ObjectDelete(0, OBJ_REMOTE_WARN_TXT);
+}
+
+void RenderRemoteWarning()
+{
+   if(g_isTester) return;
+
+   string text = "";
+   color bg = C'170,45,45';
+   if(g_remoteRuntimeWarning)
+      text = g_remoteRuntimeWarningText;
+   else if(g_remoteRenewWarning)
+   {
+      text = "授权剩余不足3天，请及时续费";
+      bg = C'180,120,20';
+   }
+
+   if(text == "")
+   {
+      ObjectDelete(0, OBJ_REMOTE_WARN_BG);
+      ObjectDelete(0, OBJ_REMOTE_WARN_TXT);
+      return;
+   }
+
+   int x = 12;
+   int y = 4;
+   int w = 520;
+   int h = 26;
+   if(ObjectFind(0, OBJ_REMOTE_WARN_BG) < 0)
+      ObjectCreate(0, OBJ_REMOTE_WARN_BG, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_COLOR, bg);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_BGCOLOR, bg);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_BACK, false);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_ZORDER, 50);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_BG, OBJPROP_HIDDEN, true);
+
+   if(ObjectFind(0, OBJ_REMOTE_WARN_TXT) < 0)
+      ObjectCreate(0, OBJ_REMOTE_WARN_TXT, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_XDISTANCE, x + 10);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_YDISTANCE, y + 5);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_FONTSIZE, 10);
+   ObjectSetString(0, OBJ_REMOTE_WARN_TXT, OBJPROP_FONT, "Microsoft YaHei UI");
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_BACK, false);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_ZORDER, 51);
+   ObjectSetInteger(0, OBJ_REMOTE_WARN_TXT, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, OBJ_REMOTE_WARN_TXT, OBJPROP_TEXT, text);
+}
+
+bool ReportRemoteTradeSnapshot()
+{
+   if(g_isTester || REMOTE_REPORT_URL == "") return false;
+
+   double bal = AccountInfoDouble(ACCOUNT_BALANCE);
+   double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+   double margin = AccountInfoDouble(ACCOUNT_MARGIN);
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double accountFloating = eq - bal;
+   int openPositions = PositionsTotal();
+   double totalExposure = 0.0;
+   for(int i = PositionsTotal() - 1; i >= 0; --i)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket)) continue;
+      totalExposure += PositionGetDouble(POSITION_VOLUME);
+   }
+
+   RefreshMartBasketState();
+   RefreshHedgeState();
+   double moduleFloating = g_cachedMartPnl + (g_hedgeActive ? g_hedgePnl : 0.0);
+
+   string json = "{";
+   json += "\"account_login\":\"" + IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN)) + "\",";
+   json += "\"timestamp\":\"" + FormatServerTime(TimeCurrent()) + "\",";
+   json += "\"symbol\":\"" + JsonEscape(_Symbol) + "\",";
+   json += "\"version\":\"1.51R\",";
+   json += "\"balance\":" + DoubleToString(bal, 2) + ",";
+   json += "\"equity\":" + DoubleToString(eq, 2) + ",";
+   json += "\"floating_profit\":" + DoubleToString(accountFloating, 2) + ",";
+   json += "\"realized_profit\":" + DoubleToString(g_dayRealizedPnl, 2) + ",";
+   json += "\"open_positions\":" + IntegerToString(openPositions) + ",";
+   json += "\"total_exposure\":" + DoubleToString(totalExposure, 2) + ",";
+   json += "\"margin\":" + DoubleToString(margin, 2) + ",";
+   json += "\"free_margin\":" + DoubleToString(freeMargin, 2) + ",";
+   json += "\"module_floating_profit\":" + DoubleToString(moduleFloating, 2) + ",";
+   json += "\"mart_floating_profit\":" + DoubleToString(g_cachedMartPnl, 2) + ",";
+   json += "\"hedge_floating_profit\":" + DoubleToString(g_hedgePnl, 2) + ",";
+   json += "\"mart_lots\":" + DoubleToString(g_martTotalLots, 2) + ",";
+   json += "\"hedge_lots\":" + DoubleToString(g_hedgeLots, 2) + ",";
+   json += "\"mart_layers\":" + IntegerToString(g_martLayerCount) + ",";
+   json += "\"auth_status\":\"" + JsonEscape(g_remoteAuthStatus) + "\",";
+   json += "\"auth_expires\":\"" + JsonEscape(g_licenseExpiry) + "\"";
+   json += "}";
+
+   string body;
+   int httpCode = 0;
+   int lastError = 0;
+   bool ok = SendRemoteJson(REMOTE_REPORT_URL, json, body, httpCode, lastError);
+   if(!ok)
+   {
+      g_remoteReportFailCount++;
+      if(httpCode == -1)
+         g_remoteReportError = StringFormat("交易状态上报失败: WebRequest错误=%d 连续%d次", lastError, g_remoteReportFailCount);
+      else
+         g_remoteReportError = StringFormat("交易状态上报失败: HTTP=%d %s 连续%d次", httpCode, body, g_remoteReportFailCount);
+
+      Print(g_remoteReportError);
+      if(g_remoteReportFailCount >= 3)
+         SetRemoteRuntimeWarning(g_remoteReportError, true);
+      return false;
+   }
+
+   g_remoteReportError = "";
+   g_remoteReportFailCount = 0;
+   if(!g_remoteRuntimeWarning || StringFind(g_remoteRuntimeWarningText, "上报") >= 0)
+      ClearRemoteRuntimeWarning();
+   return true;
+}
+
+void ReportRemoteTradeHistory()
+{
+   if(g_isTester || !REMOTE_REPORT_HISTORY) return;
+   string historyUrl = REMOTE_REPORT_URL;
+   int p = StringFind(historyUrl, "trade_report.php");
+   if(p >= 0)
+      historyUrl = StringSubstr(historyUrl, 0, p) + "trade_history.php";
+   if(historyUrl == REMOTE_REPORT_URL) return;
+
+   string gvName = "JPX_LAST_DEAL_MSC_" + IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + IntegerToString((int)InpMagicNumber);
+   if(g_lastHistoryDealMsc <= 0 && GlobalVariableCheck(gvName))
+      g_lastHistoryDealMsc = (long)GlobalVariableGet(gvName);
+
+   datetime fromTime = TimeCurrent() - 86400 * 14;
+   if(!HistorySelect(fromTime, TimeCurrent())) return;
+
+   long maxSent = g_lastHistoryDealMsc;
+   int sent = 0;
+   int totalDeals = HistoryDealsTotal();
+   for(int i = 0; i < totalDeals && sent < 50; ++i)
+   {
+      ulong deal = HistoryDealGetTicket(i);
+      if(deal == 0) continue;
+      long dealMsc = (long)HistoryDealGetInteger(deal, DEAL_TIME_MSC);
+      if(dealMsc <= g_lastHistoryDealMsc) continue;
+      long dealType = HistoryDealGetInteger(deal, DEAL_TYPE);
+      bool isFundDeal = IsFundDealType(dealType);
+      long entry = HistoryDealGetInteger(deal, DEAL_ENTRY);
+      if(!isFundDeal)
+      {
+         if(!IsManagedMagic((long)HistoryDealGetInteger(deal, DEAL_MAGIC))) continue;
+         if(!IsManagedSymbol(HistoryDealGetString(deal, DEAL_SYMBOL))) continue;
+         if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_INOUT && entry != DEAL_ENTRY_OUT_BY) continue;
+      }
+      double profit = HistoryDealGetDouble(deal, DEAL_PROFIT);
+      double commission = HistoryDealGetDouble(deal, DEAL_COMMISSION);
+      double swap = HistoryDealGetDouble(deal, DEAL_SWAP);
+      string dealSymbol = HistoryDealGetString(deal, DEAL_SYMBOL);
+      if(dealSymbol == "") dealSymbol = "ACCOUNT";
+
+      string json = "{";
+      json += "\"account_login\":\"" + IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN)) + "\",";
+      json += "\"deal_ticket\":\"" + IntegerToString((long)deal) + "\",";
+      json += "\"symbol\":\"" + JsonEscape(dealSymbol) + "\",";
+      json += "\"deal_type\":\"" + DealTypeToText(dealType) + "\",";
+      json += "\"entry_type\":\"" + DealEntryToText(entry) + "\",";
+      json += "\"volume\":" + DoubleToString(HistoryDealGetDouble(deal, DEAL_VOLUME), 2) + ",";
+      json += "\"price\":" + DoubleToString(HistoryDealGetDouble(deal, DEAL_PRICE), _Digits) + ",";
+      json += "\"profit\":" + DoubleToString(profit, 2) + ",";
+      json += "\"commission\":" + DoubleToString(commission, 2) + ",";
+      json += "\"swap\":" + DoubleToString(swap, 2) + ",";
+      json += "\"total_pnl\":" + DoubleToString(profit + commission + swap, 2) + ",";
+      json += "\"deal_time\":\"" + FormatServerTime((datetime)HistoryDealGetInteger(deal, DEAL_TIME)) + "\",";
+      json += "\"magic_number\":" + IntegerToString((long)HistoryDealGetInteger(deal, DEAL_MAGIC));
+      json += "}";
+
+      string body;
+      int httpCode = 0;
+      int lastError = 0;
+      bool ok = SendRemoteJson(historyUrl, json, body, httpCode, lastError);
+      if(!ok)
+      {
+         if(httpCode == -1)
+            PrintFormat("历史成交上报失败: WebRequest错误=%d", lastError);
+         else
+            PrintFormat("历史成交上报失败: HTTP=%d %s", httpCode, body);
+         break;
+      }
+      if(dealMsc > maxSent) maxSent = dealMsc;
+      sent++;
+   }
+
+   if(maxSent > g_lastHistoryDealMsc)
+   {
+      g_lastHistoryDealMsc = maxSent;
+      GlobalVariableSet(gvName, (double)g_lastHistoryDealMsc);
+   }
+
+   ReportRemoteFundHistory(historyUrl);
+}
+
+void ReportRemoteFundHistory(const string historyUrl)
+{
+   string gvName = "JPX_LAST_FUND_DEAL_MSC_" + IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN));
+   if(g_lastFundDealMsc <= 0 && GlobalVariableCheck(gvName))
+      g_lastFundDealMsc = (long)GlobalVariableGet(gvName);
+
+   datetime fromTime = TimeCurrent() - 86400 * 3650;
+   if(!HistorySelect(fromTime, TimeCurrent())) return;
+
+   long maxSent = g_lastFundDealMsc;
+   int sent = 0;
+   int totalDeals = HistoryDealsTotal();
+   for(int i = 0; i < totalDeals && sent < 20; ++i)
+   {
+      ulong deal = HistoryDealGetTicket(i);
+      if(deal == 0) continue;
+      long dealMsc = (long)HistoryDealGetInteger(deal, DEAL_TIME_MSC);
+      if(dealMsc <= g_lastFundDealMsc) continue;
+      long dealType = HistoryDealGetInteger(deal, DEAL_TYPE);
+      if(!IsFundDealType(dealType)) continue;
+
+      double profit = HistoryDealGetDouble(deal, DEAL_PROFIT);
+      double commission = HistoryDealGetDouble(deal, DEAL_COMMISSION);
+      double swap = HistoryDealGetDouble(deal, DEAL_SWAP);
+      long entry = HistoryDealGetInteger(deal, DEAL_ENTRY);
+
+      string json = "{";
+      json += "\"account_login\":\"" + IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN)) + "\",";
+      json += "\"deal_ticket\":\"" + IntegerToString((long)deal) + "\",";
+      json += "\"symbol\":\"ACCOUNT\",";
+      json += "\"deal_type\":\"" + DealTypeToText(dealType) + "\",";
+      json += "\"entry_type\":\"" + DealEntryToText(entry) + "\",";
+      json += "\"volume\":0.00,";
+      json += "\"price\":0.00,";
+      json += "\"profit\":" + DoubleToString(profit, 2) + ",";
+      json += "\"commission\":" + DoubleToString(commission, 2) + ",";
+      json += "\"swap\":" + DoubleToString(swap, 2) + ",";
+      json += "\"total_pnl\":" + DoubleToString(profit + commission + swap, 2) + ",";
+      json += "\"deal_time\":\"" + FormatServerTime((datetime)HistoryDealGetInteger(deal, DEAL_TIME)) + "\",";
+      json += "\"magic_number\":0";
+      json += "}";
+
+      string body;
+      int httpCode = 0;
+      int lastError = 0;
+      bool ok = SendRemoteJson(historyUrl, json, body, httpCode, lastError);
+      if(!ok)
+      {
+         if(httpCode == -1)
+            PrintFormat("资金流水上报失败: WebRequest错误=%d", lastError);
+         else
+            PrintFormat("资金流水上报失败: HTTP=%d %s", httpCode, body);
+         break;
+      }
+      if(dealMsc > maxSent) maxSent = dealMsc;
+      sent++;
+   }
+
+   if(maxSent > g_lastFundDealMsc)
+   {
+      g_lastFundDealMsc = maxSent;
+      GlobalVariableSet(gvName, (double)g_lastFundDealMsc);
+   }
+}
+
+void MaybeReportRemoteTradeState()
+{
+   if(g_isTester) return;
+   if(REMOTE_REPORT_MINUTES <= 0) return;
+   if(g_lastRemoteReport > 0 && TimeCurrent() - g_lastRemoteReport < REMOTE_REPORT_MINUTES * 60)
+      return;
+   g_lastRemoteReport = TimeCurrent();
+   if(ReportRemoteTradeSnapshot())
+      ReportRemoteTradeHistory();
+}
+
+bool CheckRemoteAuthorization(const bool showAlert)
+{
+   g_lastRemoteAuthCheck = TimeCurrent();
+   g_remoteAuthError = "";
+
+   string account = IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN));
+   string url = REMOTE_AUTH_URL;
+   string sep = (StringFind(url, "?") >= 0) ? "&" : "?";
+   url += sep + "account_login=" + account + "&version=1.51R&product=XAUUSD";
+
+   char data[];
+   char result[];
+   string resultHeaders = "";
+   ResetLastError();
+   int httpCode = WebRequest("GET", url, "", REMOTE_AUTH_TIMEOUT_MS, data, result, resultHeaders);
+   if(httpCode == -1)
+   {
+      int err = GetLastError();
+      g_remoteAuthStatus = "request_failed";
+      g_remoteAuthError = StringFormat("远程授权请求失败，错误%d。请在MT5 工具-选项-EA交易 中允许URL: %s", err, REMOTE_AUTH_URL);
+      if(g_remoteAuthorized)
+      {
+         SetRemoteRuntimeWarning(g_remoteAuthError + "；EA继续按上次授权状态运行", true);
+         return true;
+      }
+      if(showAlert) Alert(g_remoteAuthError);
+      Print(g_remoteAuthError);
+      return false;
+   }
+
+   string body = CharArrayToString(result, 0, -1, CP_UTF8);
+   if(httpCode < 200 || httpCode >= 300)
+   {
+      g_remoteAuthStatus = "http_error";
+      g_remoteAuthError = StringFormat("远程授权服务器异常: HTTP=%d", httpCode);
+      if(g_remoteAuthorized)
+      {
+         SetRemoteRuntimeWarning(g_remoteAuthError + "；EA继续按上次授权状态运行", true);
+         return true;
+      }
+      if(showAlert) Alert(g_remoteAuthError);
+      Print(g_remoteAuthError, " body=", body);
+      return false;
+   }
+
+   bool authorized = JsonGetBool(body, "authorized", false);
+   string status = JsonGetString(body, "status", "unknown");
+   string expiresAt = JsonGetString(body, "expires_at", "");
+   bool renewWarning = JsonGetBool(body, "renew_warning", false);
+
+   g_remoteAuthorized = authorized;
+   g_remoteAuthStatus = status;
+   g_remoteRenewWarning = renewWarning;
+   if(expiresAt != "")
+      g_licenseExpiry = NormalizeRemoteExpiry(expiresAt);
+
+   if(!authorized)
+   {
+      g_remoteAuthError = StringFormat("远程授权失败: HTTP=%d status=%s account=%s", httpCode, status, account);
+      if(showAlert) Alert(g_remoteAuthError);
+      Print(g_remoteAuthError, " body=", body);
+      return false;
+   }
+
+   g_remoteAuthAlerted = false;
+   if(g_remoteRuntimeWarning && StringFind(g_remoteRuntimeWarningText, "远程授权") >= 0)
+      ClearRemoteRuntimeWarning();
+   RenderRemoteWarning();
+   PrintFormat("远程授权通过: 账号=%s 状态=%s 有效期=%s 续费提醒=%s",
+               account, status, expiresAt, renewWarning ? "true" : "false");
+   return true;
+}
+
+void MaybeRefreshRemoteAuthorization()
+{
+   if(g_isTester) return;
+   if(REMOTE_AUTH_CHECK_MINUTES <= 0) return;
+   if(g_lastRemoteAuthCheck > 0 && TimeCurrent() - g_lastRemoteAuthCheck < REMOTE_AUTH_CHECK_MINUTES * 60)
+      return;
+
+   bool ok = CheckRemoteAuthorization(false);
+   if(!ok && !g_remoteAuthAlerted)
+   {
+      Alert(g_remoteAuthError);
+      g_remoteAuthAlerted = true;
+   }
+}
+
 int OnInit()
   {
    // 检测回测/优化模式
    g_isTester = (bool)MQLInfoInteger(MQL_TESTER) || (bool)MQLInfoInteger(MQL_OPTIMIZATION);
 
-   // === 离线授权码验证 ===
+   // === 远程授权验证 ===
    // 回测模式跳过授权验证
    if(!g_isTester)
    {
-      string licAccount, licExpiry, licError;
-      if(!ValidateLicense(InpLicenseKey, licAccount, licExpiry, licError))
+      if(!CheckRemoteAuthorization(true))
       {
-         Alert("授权验证失败: ", licError);
-         PrintFormat("LICENSE FAILED: %s", licError);
+         PrintFormat("REMOTE LICENSE FAILED: %s", g_remoteAuthError);
          return INIT_FAILED;
       }
-      PrintFormat("授权验证通过: 账号=%s 有效期至=%s", licAccount, licExpiry);
-      g_licenseExpiry = licExpiry;
    }
    else
    {
       g_licenseExpiry = "回测模式";
-      Print("Tester mode: license check skipped");
+      g_remoteAuthorized = true;
+      Print("Tester mode: remote license check skipped");
    }
 
    g_trade.SetExpertMagicNumber(InpMagicNumber);
@@ -1092,10 +1665,19 @@ int OnInit()
    // 改由首次 OnTick 中 ResetDailyState(false) 自动初始化（g_dayKey=-1 会自动进入分支）。
    int timerSec = 0;
    if(InpShowStatusPanel)
-     {
       timerSec = MathMax(1, InpPanelRefreshSec);
+   if(!g_isTester && REMOTE_AUTH_CHECK_MINUTES > 0)
+   {
+      int authTimer = MathMax(30, MathMin(300, REMOTE_AUTH_CHECK_MINUTES * 60));
+      timerSec = (timerSec > 0) ? MathMin(timerSec, authTimer) : authTimer;
+   }
+   if(!g_isTester && REMOTE_REPORT_MINUTES > 0)
+   {
+      int reportTimer = MathMax(30, MathMin(300, REMOTE_REPORT_MINUTES * 60));
+      timerSec = (timerSec > 0) ? MathMin(timerSec, reportTimer) : reportTimer;
+   }
+   if(timerSec > 0)
       EventSetTimer(timerSec);
-     }
    if(InpShowStatusPanel)
      {
       CreateStatusPanel();
@@ -1126,6 +1708,8 @@ void OnDeinit(const int reason)
 
 void OnTimer()
   {
+   MaybeRefreshRemoteAuthorization();
+   MaybeReportRemoteTradeState();
    ComputeSignalDiagnostics();
    if(InpShowStatusPanel)
       UpdateStatusPanel();
@@ -1150,6 +1734,27 @@ void OnTick()
    }
 
    ResetDailyState(false);
+
+   if(!g_isTester && !g_remoteAuthorized)
+     {
+      g_noEntryReason = "远程授权失效/过期";
+      int totalPos = CountMartPositions();
+      if(totalPos > 0)
+        {
+         RefreshMartBasketState();
+         RefreshHedgeState();
+         ManageHedgeLock();
+         if(ManageHedgeRelease() || ManageHedgePartialRelease() || TryHedgeRepairAdd() || ManageMartBasketTP() || CheckMartHardSL() || ManageMartTrailing())
+           {
+            ComputeSignalDiagnostics();
+            if(InpShowStatusPanel) UpdateStatusPanel();
+            return;
+           }
+        }
+      ComputeSignalDiagnostics();
+      if(InpShowStatusPanel) UpdateStatusPanel();
+      return;
+     }
 
    // Daily loss lock check
    if(CheckDailyLossLock())
@@ -1280,7 +1885,7 @@ void OnTick()
          RefreshMartBasketState();
          RefreshHedgeState();
          ManageHedgeLock();
-         if(ManageHedgeRelease() || ManageHedgePartialRelease() || TryHedgeRepairAdd() || ManageMartBasketTP() || CheckMartHardSL() || ManageMartTrailing())
+         if(ManageHedgeRelease() || ManageMartBasketTP() || CheckMartHardSL() || ManageMartTrailing())
            {
             ComputeSignalDiagnostics();
             if(InpShowStatusPanel) UpdateStatusPanel();
@@ -2531,7 +3136,6 @@ bool IsActiveMagic(const long magic)
   {
    return (magic == GetActiveMagicNumber());
   }
-
 double NormalizeVolume(const double lots)
   {
    double vMin  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
@@ -3900,9 +4504,9 @@ void CreateStatusPanel()
    ObjectSetInteger(0, OBJ_HEADER, OBJPROP_ZORDER, 3);
    ObjectSetInteger(0, OBJ_HEADER, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, OBJ_HEADER, OBJPROP_HIDDEN, true);
-   ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "青鸾 v1.49");
+   ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "青鸾 v1.49R");
 
-   ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "青鸾 v1.50");
+   ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "青鸾 v1.51R");
 
    // --- Sub-header ---
    if(ObjectFind(0, OBJ_SUBHDR) < 0)
@@ -4401,8 +5005,14 @@ void UpdateStatusPanel()
    // Sub-header with active entry path. SMC is no longer part of the entry display.
    string trendArrow = "入场:EMA+H4+精确过滤";
 
-   string subHdr = StringFormat("%s | %s | %s  %s  授权至:%s-%s-%s", InpPresetName, _Symbol, acctType, trendArrow,
-      StringSubstr(g_licenseExpiry, 0, 4), StringSubstr(g_licenseExpiry, 4, 2), StringSubstr(g_licenseExpiry, 6, 2));
+   string expiryText = g_licenseExpiry;
+   if(StringLen(g_licenseExpiry) >= 8)
+      expiryText = StringFormat("%s-%s-%s", StringSubstr(g_licenseExpiry, 0, 4), StringSubstr(g_licenseExpiry, 4, 2), StringSubstr(g_licenseExpiry, 6, 2));
+   string subHdr = StringFormat("%s | %s | %s  %s  远程授权至:%s", InpPresetName, _Symbol, acctType, trendArrow, expiryText);
+   if(g_remoteRenewWarning)
+      subHdr += " [请续费]";
+   if(!g_remoteAuthorized && !g_isTester)
+      subHdr += " [授权失效]";
    if(g_manualPaused)
       subHdr += " [暂停]";
    ObjectSetString(0, OBJ_SUBHDR, OBJPROP_TEXT, subHdr);
@@ -4411,10 +5021,15 @@ void UpdateStatusPanel()
    color topColor = C'10,72,70';
    if(g_dailyLocked || g_martHardSLLocked || g_fastLossLocked)
       topColor = C'160,50,50';
+   else if(g_remoteRuntimeWarning)
+      topColor = C'160,50,50';
+   else if(g_remoteRenewWarning)
+      topColor = C'160,110,35';
    else if(g_manualPaused)
       topColor = C'140,110,40';
    ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_COLOR, topColor);
    ObjectSetInteger(0, OBJ_TOPBAR, OBJPROP_BGCOLOR, topColor);
+   RenderRemoteWarning();
 
    // --- Card 1: Basket PnL ---
    ObjectSetString(0, OBJ_CARD1_T, OBJPROP_TEXT, g_hedgeActive ? "总浮盈" : "篮子浮盈");
@@ -4656,7 +5271,6 @@ void UpdateStatusPanel()
    ObjectSetString(0, OBJ_LINE3, OBJPROP_TEXT, "精确过滤:");
    ObjectSetInteger(0, OBJ_LINE3, OBJPROP_YDISTANCE, reasonY + 48);
    ObjectSetInteger(0, OBJ_LINE3, OBJPROP_COLOR, C'126,190,184');
-
    // Line 3 & 4: no longer created, just safety clear
    // V1.41 removed the SMC panel. Keep old helper code below unreachable for legacy compile safety.
    return;
@@ -5599,4 +6213,8 @@ void DestroyHistoryPanel()
    ObjectsDeleteAll(0, "HYB_HIST_");
    ChartRedraw(0);
 }
+
+
+
+
 

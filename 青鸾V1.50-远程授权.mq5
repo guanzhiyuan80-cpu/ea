@@ -668,6 +668,7 @@ int    g_sigMartDistToNext  = 0;       // points to next layer trigger
 double g_sigMartBasketPnL   = 0.0;     // current basket floating PnL
 double g_sigEntryDistSlowAtr = 0.0;     // 首单防追: 收盘价距慢EMA的ATR倍数
 double g_sigEntryBodyAtr     = 0.0;     // 首单防追: 上根K实体ATR倍数
+int    g_sigEntryBodyDir     = 0;       // 首单精确过滤: 上根K实体方向(1阳线/-1阴线)
 double g_sigEntryPrecisionRsi = 0.0;    // 首单精确过滤: RSI
 
 // SMC signal cache
@@ -3504,6 +3505,7 @@ bool IsEntryPrecisionBlocked(const ENUM_POSITION_TYPE side)
    double body = close1 - open1;
    g_sigEntryDistSlowAtr = MathAbs(close1 - slow[0]) / atr;
    g_sigEntryBodyAtr = MathAbs(body) / atr;
+   g_sigEntryBodyDir = (body > 0.0) ? 1 : ((body < 0.0) ? -1 : 0);
 
    if(InpEntryMinDistSlowEMA_ATR > 0.0 && g_sigEntryDistSlowAtr < InpEntryMinDistSlowEMA_ATR)
      {
@@ -3945,6 +3947,7 @@ void ComputeSignalDiagnostics()
    g_sigMartBasketPnL  = g_cachedMartPnl;
    g_sigEntryDistSlowAtr = 0.0;
    g_sigEntryBodyAtr     = 0.0;
+   g_sigEntryBodyDir     = 0;
    g_sigEntryPrecisionRsi = 0.0;
 
    // Read EMA values and compute signal inline (avoids duplicate GetMartSignal call)
@@ -3975,7 +3978,9 @@ void ComputeSignalDiagnostics()
          if(atr > 0.0 && open1 > 0.0 && emaSlow[1] > 0.0)
            {
             g_sigEntryDistSlowAtr = MathAbs(close1 - emaSlow[1]) / atr;
-            g_sigEntryBodyAtr = MathAbs(close1 - open1) / atr;
+            double body = close1 - open1;
+            g_sigEntryBodyAtr = MathAbs(body) / atr;
+            g_sigEntryBodyDir = (body > 0.0) ? 1 : ((body < 0.0) ? -1 : 0);
            }
          if(g_hEntryPrecisionRSI != INVALID_HANDLE)
            {
@@ -4065,16 +4070,69 @@ string GetBlockingReason()
 
 string GetEntryReasonLine()
   {
-   string reason = g_noEntryReason;
-   if(reason == "")
-      reason = GetBlockingReason();
-   if(reason == "")
-      reason = "等待下一根有效信号";
+   string reason = GetBlockingReason();
+   if(reason != "")
+      return "未建仓:" + reason;
 
    int need = (int)MathRound(InpSMCWeightEMA * 2.0 / 3.0);
-   string h4 = GetH4PanelText();
-   return StringFormat("未建仓:%s | EMA多:%d/%d 空:%d/%d | H4:%s",
-      reason, g_sigMartEmaScoreLong, need, g_sigMartEmaScoreShort, need, h4);
+   bool emaLongOk = (g_sigMartEmaDir == 1 && g_sigMartEmaScoreLong >= need);
+   bool emaShortOk = (g_sigMartEmaDir == -1 && g_sigMartEmaScoreShort >= need);
+   bool emaOk = (emaLongOk || emaShortOk);
+
+   if(!emaOk)
+      reason = "EMA方向信号未达标";
+   else
+     {
+      int dir = emaLongOk ? 1 : -1;
+      if(InpMartH4FilterMode != H4_FILTER_OFF && !g_sigH4Confirmed)
+        {
+         if(reason != "") reason += "；";
+         reason += (dir == 1) ? "H4趋势不支持做多" : "H4趋势不支持做空";
+        }
+      if(InpUseATRAddPause && g_addAtrPaused)
+        {
+         if(reason != "") reason += "；";
+         reason += "ATR波动扩张，暂停新篮子";
+        }
+      if(InpUseEntryPrecisionFilter)
+        {
+         if(dir == 1 && InpEntryBuyRsiMax > 0.0 && g_sigEntryPrecisionRsi >= InpEntryBuyRsiMax)
+           {
+            if(reason != "") reason += "；";
+            reason += "RSI偏高，不适合做多";
+           }
+         if(dir == -1 && InpEntrySellRsiMin > 0.0 && g_sigEntryPrecisionRsi <= InpEntrySellRsiMin)
+           {
+            if(reason != "") reason += "；";
+            reason += "RSI偏低，不适合做空";
+           }
+         if(InpEntryMinDistSlowEMA_ATR > 0.0 && g_sigEntryDistSlowAtr < InpEntryMinDistSlowEMA_ATR)
+           {
+            if(reason != "") reason += "；";
+            reason += "距离慢EMA太近，动能不足";
+           }
+         if(InpEntryMaxPullbackEMA_ATR > 0.0 && g_sigEntryDistSlowAtr > InpEntryMaxPullbackEMA_ATR)
+           {
+            if(reason != "") reason += "；";
+            reason += (dir == 1) ? "距离慢EMA太远，避免追高" : "距离慢EMA太远，避免追低";
+           }
+         if(InpEntryMinBody_ATR > 0.0 && g_sigEntryBodyAtr < InpEntryMinBody_ATR)
+           {
+            if(reason != "") reason += "；";
+            reason += "上根K线实体太小";
+           }
+         if(InpEntryRequireBodyDirection && g_sigEntryBodyDir != 0 && g_sigEntryBodyDir != dir)
+           {
+            if(reason != "") reason += "；";
+            reason += (dir == 1) ? "上根K线不是阳线，不确认做多" : "上根K线不是阴线，不确认做空";
+           }
+        }
+     }
+
+   if(reason == "")
+      reason = (g_noEntryReason != "") ? g_noEntryReason : "等待下一根有效信号";
+
+   return "未建仓:" + reason;
   }
 
 string GetH4PanelText()
@@ -4543,20 +4601,22 @@ void CreateStatusPanel()
      }
 
    string condObjs[] = {OBJ_ENTRY_C0, OBJ_ENTRY_C1, OBJ_ENTRY_C2, OBJ_ENTRY_C3, OBJ_ENTRY_C4, OBJ_ENTRY_C5};
-   int condX[] = {84, 178, 253, 333, 431, 510};
+   int condX[] = {84, 230, 392};
+   int condOrder[] = {0, 1, 5, 2, 3, 4};
    for(int k = 0; k < 6; ++k)
      {
-      if(ObjectFind(0, condObjs[k]) < 0)
-         ObjectCreate(0, condObjs[k], OBJ_LABEL, 0, 0, 0);
-      ObjectSetInteger(0, condObjs[k], OBJPROP_CORNER, CORNER_LEFT_UPPER);
-      ObjectSetInteger(0, condObjs[k], OBJPROP_XDISTANCE, g_panelX + condX[k]);
-      ObjectSetInteger(0, condObjs[k], OBJPROP_YDISTANCE, lineY + 6 * lineGap);
-      ObjectSetString(0, condObjs[k], OBJPROP_FONT, "Microsoft YaHei UI");
-      ObjectSetInteger(0, condObjs[k], OBJPROP_FONTSIZE, 9);
-      ObjectSetInteger(0, condObjs[k], OBJPROP_COLOR, C'126,190,184');
-      ObjectSetString(0, condObjs[k], OBJPROP_TEXT, "");
-      ObjectSetInteger(0, condObjs[k], OBJPROP_SELECTABLE, false);
-      ObjectSetInteger(0, condObjs[k], OBJPROP_HIDDEN, true);
+      int idx = condOrder[k];
+      if(ObjectFind(0, condObjs[idx]) < 0)
+         ObjectCreate(0, condObjs[idx], OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, condObjs[idx], OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, condObjs[idx], OBJPROP_XDISTANCE, g_panelX + condX[k % 3]);
+      ObjectSetInteger(0, condObjs[idx], OBJPROP_YDISTANCE, lineY + (6 + k / 3) * lineGap);
+      ObjectSetString(0, condObjs[idx], OBJPROP_FONT, "Microsoft YaHei UI");
+      ObjectSetInteger(0, condObjs[idx], OBJPROP_FONTSIZE, 9);
+      ObjectSetInteger(0, condObjs[idx], OBJPROP_COLOR, C'126,190,184');
+      ObjectSetString(0, condObjs[idx], OBJPROP_TEXT, "");
+      ObjectSetInteger(0, condObjs[idx], OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, condObjs[idx], OBJPROP_HIDDEN, true);
      }
 
    // LINE3 — 不建仓原因行（对冲行下方，初始移至屏幕外，由UpdateStatusPanel按需显示）
@@ -5197,15 +5257,20 @@ void UpdateStatusPanel()
       ? StringFormat("ATR:%.2f", g_addAtrRatio)
       : "ATR:正常";
 
-   for(int c = 0; c < 6; ++c)
+   int condX[] = {84, 230, 392};
+   int condOrder[] = {0, 1, 5, 2, 3, 4};
+   for(int d = 0; d < 6; ++d)
      {
+      int c = condOrder[d];
       ObjectSetString(0, condObjs[c], OBJPROP_TEXT, condTexts[c]);
-      ObjectSetInteger(0, condObjs[c], OBJPROP_YDISTANCE, reasonY + 24);
+      ObjectSetInteger(0, condObjs[c], OBJPROP_XDISTANCE, g_panelX + condX[d % 3]);
+      ObjectSetInteger(0, condObjs[c], OBJPROP_YDISTANCE, reasonY + 24 + (d / 3) * 24);
       ObjectSetInteger(0, condObjs[c], OBJPROP_COLOR, condOk[c] ? C'40,220,140' : C'255,90,90');
      }
 
-   ObjectSetString(0, OBJ_LINE3, OBJPROP_TEXT, "");
-   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_YDISTANCE, -9999);
+   ObjectSetString(0, OBJ_LINE3, OBJPROP_TEXT, "精确过滤:");
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_YDISTANCE, reasonY + 48);
+   ObjectSetInteger(0, OBJ_LINE3, OBJPROP_COLOR, C'126,190,184');
    // Line 3 & 4: no longer created, just safety clear
    // V1.41 removed the SMC panel. Keep old helper code below unreachable for legacy compile safety.
    return;

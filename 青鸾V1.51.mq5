@@ -1,5 +1,5 @@
 ﻿#property copyright "Qingluan EA"
-#property version   "1.50"
+#property version   "1.51"
 #property strict
 
 #include <Trade/Trade.mqh>
@@ -3902,7 +3902,7 @@ void CreateStatusPanel()
    ObjectSetInteger(0, OBJ_HEADER, OBJPROP_HIDDEN, true);
    ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "青鸾 v1.49");
 
-   ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "青鸾 v1.50");
+   ObjectSetString(0, OBJ_HEADER, OBJPROP_TEXT, "青鸾 v1.51");
 
    // --- Sub-header ---
    if(ObjectFind(0, OBJ_SUBHDR) < 0)
