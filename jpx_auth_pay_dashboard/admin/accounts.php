@@ -40,10 +40,11 @@ $stmt->execute($params);
 $accounts = $stmt->fetchAll();
 ?><!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>授权账号管理</title><link rel="stylesheet" href="../assets/css/app.css"></head>
+<title>授权账号管理</title><link rel="stylesheet" href="../assets/css/app.css?v=20260729-1">
+<link rel="icon" type="image/jpeg" href="../assets/img/favicon.jpg?v=20260729-1"></head>
 <body>
-<header class="topbar"><div class="brand">金貔貅授权续费系统</div><nav class="nav">
-  <a class="active" href="accounts.php">账号管理</a><a href="dashboard.php">盈亏大屏</a><a href="../index.php">游客续费页</a><a href="logout.php">退出</a>
+<header class="topbar"><div class="brand">青鸾授权续费系统</div><nav class="nav">
+  <a class="active" href="accounts.php">账号管理</a><a href="dashboard.php">盈亏大屏</a><a href="orders.php">续费记录</a><a href="../index.php">游客续费页</a><a href="logout.php">退出</a>
 </nav></header>
 <main class="wrap">
   <section class="panel">
@@ -60,17 +61,18 @@ $accounts = $stmt->fetchAll();
   <section class="panel" style="margin-top:18px">
     <form class="toolbar" method="get"><div><label>搜索</label><input name="q" value="<?= h($q) ?>" placeholder="账号/用户/备注"></div><button class="btn">搜索</button></form>
     <table>
-      <thead><tr><th>ID</th><th>用户</th><th>账号</th><th>状态</th><th>到期时间</th><th>备注</th><th>心跳</th></tr></thead>
+      <thead><tr><th>ID</th><th>用户</th><th>账号</th><th>状态</th><th>到期时间</th><th>备注</th><th>最后心跳</th><th>操作</th></tr></thead>
       <tbody>
       <?php foreach ($accounts as $a): $status = account_status($a['expires_at']); ?>
         <tr data-id="<?= (int)$a['id'] ?>">
           <td><?= (int)$a['id'] ?></td>
           <td><input class="edit-customer" value="<?= h($a['customer_name']) ?>"></td>
-          <td><input class="edit-account" value="<?= h($a['account_login']) ?>"></td>
+          <td><input class="edit-account readonly-input" value="<?= h($a['account_login']) ?>" readonly title="账号添加后不允许修改"></td>
           <td><span class="status <?= h($status) ?>"><?= h($status) ?></span></td>
-          <td><?= h($a['expires_at'] ?: '-') ?></td>
-          <td><textarea class="edit-note"><?= h($a['admin_note']) ?></textarea></td>
-          <td><?= h($a['last_heartbeat_at'] ?: '-') ?><br><button class="btn" onclick="saveRow(this)">保存</button></td>
+          <td class="cell-time"><?= h($a['expires_at'] ?: '-') ?></td>
+          <td><input class="edit-note" type="text" value="<?= h($a['admin_note']) ?>" placeholder="管理员备注"></td>
+          <td class="cell-time cell-heartbeat"><?= h($a['last_heartbeat_at'] ?: '-') ?></td>
+          <td class="cell-action"><button class="btn btn-sm" onclick="saveRow(this)">保存</button></td>
         </tr>
       <?php endforeach; ?>
       </tbody>

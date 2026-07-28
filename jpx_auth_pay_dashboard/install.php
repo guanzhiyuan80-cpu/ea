@@ -35,8 +35,9 @@ try {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>金貔貅授权续费系统安装</title>
-<link rel="stylesheet" href="assets/css/app.css">
+<title>青鸾授权续费系统安装</title>
+<link rel="icon" type="image/jpeg" href="assets/img/favicon.jpg?v=20260729-1">
+<link rel="stylesheet" href="assets/css/app.css?v=20260729-1">
 </head>
 <body class="page-center">
 <main class="panel narrow">

@@ -22,7 +22,7 @@ try {
                            VALUES(?, ?, ?, ?, 'pending', NOW())");
     $stmt->execute([$accountId, $orderNo, $amount, RENEW_MONTHS]);
 
-    $title = '金貔貅EA续费 ' . $account['account_login'];
+    $title = '青鸾EA续费 ' . $account['account_login'];
     $pay = wxpay_create_native_order($orderNo, $amount, $title);
     if (!$pay['ok']) {
         json_response(['ok' => false, 'msg' => $pay['msg'], 'order_no' => $orderNo], 500);

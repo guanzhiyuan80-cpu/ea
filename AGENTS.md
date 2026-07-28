@@ -515,6 +515,13 @@ jpx_auth_pay_dashboard/
 
 ## 15. 变更日志
 
+### 2026-07-29（Web 后台品牌）
+
+**修改**
+- EA 授权续费后台和盈亏大屏可见品牌统一从“金貔貅”改为“青鸾”。
+- 后台网页 Logo / favicon 改用源码目录 `LOGO.jpg` 同步到 `jpx_auth_pay_dashboard/assets/img/logo.jpg` 与 `favicon.jpg`。
+- 后台全局与大屏主色从金色调调整为青鸾青色系，保留盈亏红绿功能色。
+
 ### 2026-06-22（EA V1.37）
 
 **修复**

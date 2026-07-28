@@ -19,10 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?><!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>管理员登录</title><link rel="stylesheet" href="../assets/css/app.css"></head>
+<title>管理员登录</title><link rel="icon" type="image/jpeg" href="../assets/img/favicon.jpg?v=20260729-1"><link rel="stylesheet" href="../assets/css/app.css?v=20260729-1"></head>
 <body class="page-center">
 <main class="panel narrow">
-  <h1>金貔貅后台</h1>
+  <h1>青鸾后台</h1>
   <?php if ($error): ?><div class="alert danger"><?= h($error) ?></div><?php endif; ?>
   <form method="post">
     <label>管理员账号</label><input name="username" required autofocus>

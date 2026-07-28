@@ -353,15 +353,15 @@ function fmtUSD($cents): string {
 ?><!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="60">
-<title>金貔貅盈亏大屏</title>
-<link rel="icon" type="image/png" href="../assets/img/logo.png?v=2">
-<link rel="stylesheet" href="../assets/css/app.css?v=20260623-1">
+<title>青鸾盈亏大屏</title>
+<link rel="icon" type="image/jpeg" href="../assets/img/favicon.jpg?v=20260729-1">
+<link rel="stylesheet" href="../assets/css/app.css?v=20260729-1">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script></head>
 <body class="dashboard-page dashboard-fullscreen">
 <header class="topbar dashboard-topbar dashboard-topbar-flat">
   <div class="brand brand-with-logo">
-    <img src="../assets/img/logo.png" alt="金貔貅">
-    <span><b>金貔貅盈亏大屏</b><small>GOLD PIXIU · MONITOR</small></span>
+    <img src="../assets/img/logo.jpg?v=20260729-1" alt="青鸾">
+    <span><b>青鸾盈亏大屏</b><small>QINGLUAN EA · MONITOR</small></span>
   </div>
   <form class="toolbar dashboard-toolbar dashboard-toolbar-inline" method="get">
     <div><label>用户</label><select name="customer" id="customerSelect"><option value="">全部</option><?php foreach($customers as $c): ?><option <?= $customer===$c['customer_name']?'selected':'' ?>><?= h($c['customer_name']) ?></option><?php endforeach; ?></select></div>
@@ -456,7 +456,7 @@ const equityPie = <?= json_encode($equityPieData, JSON_UNESCAPED_UNICODE) ?>;
 const onlineCount = <?= (int)$onlineCount ?>;
 const offlineCount = <?= (int)$offlineCount ?>;
 const axisColor = '#8b95b0';
-const splitColor = 'rgba(216,172,79,.10)';
+const splitColor = 'rgba(78,228,211,.12)';
 function fmtU(v){ return Math.round(v/100).toLocaleString()+'U'; }
 document.getElementById('customerSelect')?.addEventListener('change', e => {
   const form = e.target.form;
@@ -482,14 +482,14 @@ function regChart(id, opt){
 
 regChart('groupChart', {
   backgroundColor:'transparent',
-  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'}},
+  tooltip:{trigger:'axis',backgroundColor:'rgba(3,29,32,.94)',borderColor:'#4ee4d3',textStyle:{color:'#eef3ff'}},
   legend:{top:0,right:10,textStyle:{color:axisColor,fontSize:12},itemWidth:14,itemHeight:8},
   grid:{top:38,left:60,right:18,bottom:38,containLabel:false},
-  xAxis:{type:'category',data:groupLabels,axisLine:{lineStyle:{color:'rgba(216,172,79,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor,interval:0,rotate:groupLabels.length>6?28:0,fontSize:12}},
+  xAxis:{type:'category',data:groupLabels,axisLine:{lineStyle:{color:'rgba(78,228,211,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor,interval:0,rotate:groupLabels.length>6?28:0,fontSize:12}},
   yAxis:{type:'value',axisLabel:{color:axisColor,fontSize:11,formatter:v=>Number(v).toLocaleString()},splitLine:{lineStyle:{color:splitColor}}},
   series:[
     {name:'已实现',type:'bar',data:groupRealized,barMaxWidth:24,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#5cf1a8'},{offset:1,color:'#1a8a55'}]),borderRadius:[5,5,0,0]}},
-    {name:'净值变化',type:'bar',data:groupEquityDelta,barMaxWidth:24,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#fff1a8'},{offset:1,color:'#b78324'}]),borderRadius:[5,5,0,0]}},
+    {name:'净值变化',type:'bar',data:groupEquityDelta,barMaxWidth:24,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#a7fff4'},{offset:1,color:'#26c6da'}]),borderRadius:[5,5,0,0]}},
     {name:'浮动变化',type:'bar',data:groupFloatingDelta,barMaxWidth:24,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#9bdcff'},{offset:1,color:'#276f9b'}]),borderRadius:[5,5,0,0]}}
   ]
 });
@@ -500,21 +500,21 @@ const trendEquityDelta = dailyTrend.map(x=>Number(x.equity_delta||0));
 const trendFloatingDelta = dailyTrend.map(x=>Number(x.floating_delta||0));
 regChart('combinedChart', {
   backgroundColor:'transparent',
-  tooltip:{trigger:'axis',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'}},
+  tooltip:{trigger:'axis',backgroundColor:'rgba(3,29,32,.94)',borderColor:'#4ee4d3',textStyle:{color:'#eef3ff'}},
   legend:{top:0,right:10,textStyle:{color:axisColor,fontSize:12},itemWidth:14,itemHeight:8},
   grid:{top:38,left:60,right:18,bottom:32},
-  xAxis:{type:'category',data:trendDays,axisLine:{lineStyle:{color:'rgba(216,172,79,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor,fontSize:11,interval:Math.ceil(trendDays.length/10)}},
+  xAxis:{type:'category',data:trendDays,axisLine:{lineStyle:{color:'rgba(78,228,211,.45)'}},axisTick:{show:false},axisLabel:{color:axisColor,fontSize:11,interval:Math.ceil(trendDays.length/10)}},
   yAxis:{type:'value',axisLabel:{color:axisColor,fontSize:11,formatter:v=>Number(v).toLocaleString()},splitLine:{lineStyle:{color:splitColor}}},
   series:[
     {name:'已实现',type:'line',smooth:true,symbol:'circle',symbolSize:5,data:trendRealized,lineStyle:{color:'#39d98a',width:2.5},itemStyle:{color:'#39d98a',borderColor:'#0e1422',borderWidth:1.5}},
-    {name:'净值变化',type:'line',smooth:true,symbol:'circle',symbolSize:5,data:trendEquityDelta,lineStyle:{color:'#fff1a8',width:2.7},itemStyle:{color:'#fff1a8',borderColor:'#0e1422',borderWidth:1.5},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(255,241,168,.24)'},{offset:1,color:'rgba(255,241,168,.02)'}])}},
+    {name:'净值变化',type:'line',smooth:true,symbol:'circle',symbolSize:5,data:trendEquityDelta,lineStyle:{color:'#a7fff4',width:2.7},itemStyle:{color:'#a7fff4',borderColor:'#0e1422',borderWidth:1.5},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(78,228,211,.24)'},{offset:1,color:'rgba(78,228,211,.02)'}])}},
     {name:'浮动变化',type:'line',smooth:true,symbol:'circle',symbolSize:5,data:trendFloatingDelta,lineStyle:{color:'#42b8ff',width:2.2},itemStyle:{color:'#42b8ff',borderColor:'#0e1422',borderWidth:1.5}}
   ]
 });
 
 regChart('balancePie', {
   backgroundColor:'transparent',
-  tooltip:{trigger:'item',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'},
+  tooltip:{trigger:'item',backgroundColor:'rgba(3,29,32,.94)',borderColor:'#4ee4d3',textStyle:{color:'#eef3ff'},
     formatter:p=>`${p.name}<br/>结余 <b style="color:#f4f8ff;font-size:14px">${Math.round(p.value/100).toLocaleString()}</b> USD<br/>占比 ${p.percent.toFixed(1)}%`},
   legend:{
     type:'scroll',orient:'vertical',right:2,top:'middle',
@@ -525,7 +525,7 @@ regChart('balancePie', {
     }},
     itemHeight:10,itemWidth:10,itemGap:8
   },
-  color:['#d8ac4f','#42b8ff','#39d98a','#7c5cff','#ff8a5c','#9bdcff','#b29bff','#7af0b5','#ffd700','#ff6d7c'],
+  color:['#4ee4d3','#42b8ff','#39d98a','#7c5cff','#ff8a5c','#9bdcff','#b29bff','#7af0b5','#a7fff4','#ff6d7c'],
   series:[{
     type:'pie',
     radius:['46%','72%'],
@@ -540,7 +540,7 @@ regChart('balancePie', {
 
 regChart('equityPie', {
   backgroundColor:'transparent',
-  tooltip:{trigger:'item',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'},
+  tooltip:{trigger:'item',backgroundColor:'rgba(3,29,32,.94)',borderColor:'#4ee4d3',textStyle:{color:'#eef3ff'},
     formatter:p=>`${p.name}<br/>净值 <b style="color:#f4f8ff;font-size:14px">${Math.round(p.value/100).toLocaleString()}</b> USD<br/>占比 ${p.percent.toFixed(1)}%`},
   legend:{
     type:'scroll',orient:'vertical',right:2,top:'middle',
@@ -551,7 +551,7 @@ regChart('equityPie', {
     }},
     itemHeight:10,itemWidth:10,itemGap:8
   },
-  color:['#d8ac4f','#42b8ff','#39d98a','#7c5cff','#ff8a5c','#9bdcff','#b29bff','#7af0b5','#ffd700','#ff6d7c'],
+  color:['#4ee4d3','#42b8ff','#39d98a','#7c5cff','#ff8a5c','#9bdcff','#b29bff','#7af0b5','#a7fff4','#ff6d7c'],
   series:[{
     type:'pie',
     radius:['46%','72%'],
@@ -566,14 +566,14 @@ regChart('equityPie', {
 
 regChart('statusPie', {
   backgroundColor:'transparent',
-  tooltip:{trigger:'item',backgroundColor:'rgba(12,16,28,.94)',borderColor:'#d8ac4f',textStyle:{color:'#eef3ff'}},
+  tooltip:{trigger:'item',backgroundColor:'rgba(3,29,32,.94)',borderColor:'#4ee4d3',textStyle:{color:'#eef3ff'}},
   legend:{bottom:4,left:'center',textStyle:{color:axisColor,fontSize:13},itemHeight:10,itemWidth:16,itemGap:14},
   series:[{
     type:'pie',
     radius:['58%','78%'],
     center:['50%','46%'],
     avoidLabelOverlap:true,
-    label:{show:true,position:'center',formatter:[`{val|${onlineCount+offlineCount}}`,'{lab|账号总数}'].join('\n'),rich:{val:{color:'#fff1a8',fontSize:30,fontWeight:700,lineHeight:34},lab:{color:'#a3acc4',fontSize:13,lineHeight:18}}},
+    label:{show:true,position:'center',formatter:[`{val|${onlineCount+offlineCount}}`,'{lab|账号总数}'].join('\n'),rich:{val:{color:'#a7fff4',fontSize:30,fontWeight:700,lineHeight:34},lab:{color:'#a3acc4',fontSize:13,lineHeight:18}}},
     labelLine:{show:false},
     data:[
       {name:'在线',value:onlineCount,itemStyle:{color:'#39d98a'}},

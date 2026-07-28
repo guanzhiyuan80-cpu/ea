@@ -11,13 +11,14 @@ try {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>金貔貅账号续费</title>
-<link rel="stylesheet" href="assets/css/app.css">
+<title>青鸾账号续费</title>
+<link rel="icon" type="image/jpeg" href="assets/img/favicon.jpg?v=20260729-1">
+<link rel="stylesheet" href="assets/css/app.css?v=20260729-1">
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">金貔貅账号续费</div>
+  <div class="brand">青鸾账号续费</div>
   <nav class="nav"><a href="admin/login.php">管理员登录</a></nav>
 </header>
 
@@ -50,6 +51,13 @@ try {
     <p id="payMsg" class="muted"></p>
     <button class="btn" onclick="closePay()">关闭</button>
   </div>
+</div>
+
+<div id="wechatGuide" class="wechat-guide">
+  <div class="wechat-guide-arrow">↗</div>
+  <div class="wechat-guide-tip">请点击右上角 <b>⋯</b><br>选择「<b>在浏览器中打开</b>」</div>
+  <div class="wechat-guide-sub">由于微信内置浏览器限制，请在外部浏览器中完成微信扫码支付</div>
+  <button class="btn primary" onclick="closeWxGuide()" style="margin-top:18px;min-width:160px">我知道了</button>
 </div>
 
 <script>
@@ -109,26 +117,31 @@ async function searchAccounts() {
 
 async function renew(id, account) {
   clearInterval(timer);
-  const body = new URLSearchParams({account_id: id});
 
-  if (!isWeChat) {
-    openPayModal(account, '正在创建支付订单...');
+  // 微信内置浏览器不支持 NATIVE 扫码跳转，引导用户去外部浏览器
+  if (isWeChat) {
+    showWxGuide();
+    return;
   }
+
+  const body = new URLSearchParams({account_id: id});
+  openPayModal(account, '正在创建支付订单...');
 
   const res = await fetch('api/create_payment.php', {method:'POST', body});
   const data = await res.json();
   if (!data.ok) {
-    if (isWeChat) alert(data.msg || '创建订单失败');
-    else showPayError(data.msg || '创建订单失败');
-    return;
-  }
-
-  if (isWeChat) {
-    location.href = data.code_url;
+    showPayError(data.msg || '创建订单失败');
     return;
   }
 
   showQr(account, data);
+}
+
+function showWxGuide() {
+  document.getElementById('wechatGuide').classList.add('show');
+}
+function closeWxGuide() {
+  document.getElementById('wechatGuide').classList.remove('show');
 }
 
 function openPayModal(account, msg) {
