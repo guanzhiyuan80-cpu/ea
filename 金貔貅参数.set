@@ -28,19 +28,24 @@ InpFixedLot=0.01
 InpMartBaseLot=0.01
 InpMartLotMultiplier=1.2
 InpMartMaxLayerLot=3.0
-InpMartMaxLayers=35
-InpMartBaseSpacingPts=100
-InpMartIncSpacingPts=20
-InpMartATRSpacingCoeff=0.02
+InpMartMaxLayers=25
+InpMartBaseSpacingPts=200
+InpMartIncSpacingPts=30
+InpMartATRSpacingCoeff=0.03
 InpMartATRSpacingPeriod=3
 InpMartATRSpacingLongPeriod=6
+InpMartSpacingStage1MaxLayer=5
+InpMartSpacingStage1Factor=1.0
+InpMartSpacingStage2MaxLayer=10
+InpMartSpacingStage2Factor=1.1
+InpMartSpacingStage3MaxLayer=15
+InpMartSpacingStage3Factor=1.3
+InpMartSpacingStage4Factor=1.6
 InpUseATRAddPause=true
-InpATRAddPauseRatio=1.6
-InpATRAddResumeRatio=1.3
+InpATRAddPauseRatio=1.5
+InpATRAddResumeRatio=1.25
 InpMartMaxTotalLots=10.0
 ; === 止盈止损 ===
-InpMartBasketTP_USD=8.0
-InpMartBasketTPPerLayer=12.0
 InpEnableDeepProtectTP=true
 InpDeepTPLevel1Start=6
 InpDeepTPLevel1Factor=0.85
@@ -57,49 +62,22 @@ InpMartCooldownSec=60
 InpMartEntryTF=15
 InpMartEmaFastPeriod=13
 InpMartEmaSlowPeriod=34
-InpMartUseH4Filter=false
+InpMartH4FilterMode=2
 InpMartStartHour=0
 InpMartEndHour=0
+InpMartH4EmaPeriod=3
 InpUseEntryChaseFilter=true
 InpEntryMaxDistSlowEMA_ATR=3.0
 InpEntryMaxPrevBody_ATR=3.0
-; ============================== SMC智能资金入场 ======================
-InpEntryMode=2
-InpSMCScoreThreshold=30
-; --- 大周期方向(4H) ---
-InpSMC_Imbalance=true
-InpSMC_ImbalanceLookback=20
-InpSMC_ImbalanceRatio=1.0
-InpSMC_SupplyDemand=true
-InpSMC_SDZoneLookback=50
-InpSMC_SDImpulseATR=1.5
-; --- 中周期入场(1H) ---
-InpSMC_OrderBlock=true
-InpSMC_OBLookback=30
-InpSMC_OBImpulseATR=1.0
-InpSMC_FVG=true
-InpSMC_FVGLookback=20
-; --- 小周期精确(15M) ---
-InpSMC_LiquidityVoid=true
-InpSMC_LVLookback=25
-InpSMC_LVMinBodyATR=1.0
-InpSMC_Breaker=true
-InpSMC_BreakerLookback=30
-; --- CCI 动量过滤(可选) ---
-InpSMC_UseCCI=false
-InpSMC_CCI_TF=16385
-InpSMC_CCIPeriod=14
-InpSMC_CCIExtreme=150
-; --- H4 EMA周期 ---
-InpMartH4EmaPeriod=3
-; --- 综合评分权重 ---
-InpSMCWeightImbalance=15
-InpSMCWeightSD=15
-InpSMCWeightOB=13
-InpSMCWeightFVG=12
-InpSMCWeightLV=8
-InpSMCWeightBreaker=7
-InpSMCWeightEMA=30
+InpUseEntryPrecisionFilter=true
+InpEntryPrecisionRSITF=5
+InpEntryPrecisionRSIPeriod=14
+InpEntryBuyRsiMax=52.0
+InpEntrySellRsiMin=48.0
+InpEntryMinDistSlowEMA_ATR=0.20
+InpEntryMaxPullbackEMA_ATR=1.80
+InpEntryMinBody_ATR=0.30
+InpEntryRequireBodyDirection=true
 ; === 高级风控（默认关闭） ===
 InpEnableFastLoss=false
 InpFastLossDistance=800
@@ -111,12 +89,22 @@ InpHedgeTriggerMode=0
 InpHedgeLossPercent=30.0
 InpHedgeAbsoluteUSD=10000.0
 InpHedgeRatio=0.6
-InpHedgeLadderLoss1=1800.0
-InpHedgeLadderRatio1=0.6
-InpHedgeLadderLoss2=2600.0
-InpHedgeLadderRatio2=0.7
-InpHedgeLadderLoss3=3800.0
-InpHedgeLadderRatio3=0.8
+InpHedgeLadderLoss1=2000.0
+InpHedgeLadderRatio1=0.55
+InpHedgeLadderLoss2=3000.0
+InpHedgeLadderRatio2=0.65
+InpHedgeLadderLoss3=4500.0
+InpHedgeLadderRatio3=0.75
+InpEnableHedgePartialRelease=true
+InpHedgePartialRecoverPct=30.0
+InpHedgePartialClosePct=30.0
+InpHedgeMinRatioAfterPartial=0.35
+InpHedgePartialMinIntervalSec=600
+InpEnableHedgeRepairAdd=true
+InpHedgeRepairMaxAdds=2
+InpHedgeRepairLot=0.01
+InpHedgeRepairMinRecoverPct=20.0
+InpHedgeRepairMinIntervalSec=900
 InpHedgeReleaseMode=0
 InpHedgeReleaseFixed=200.0
 InpHedgeReleaseDynPerLayer=5.0
@@ -125,8 +113,18 @@ InpShowStatusPanel=true
 InpPanelX=5
 InpPanelY=5
 InpPanelWidth=680
-InpPanelHeight=380
+InpPanelHeight=374
 InpPanelRefreshSec=2
 ; === 历史交易明细 ===
 InpHistoryDays=15
+
+
+
+
+
+
+
+
+
+
 
