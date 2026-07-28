@@ -79,14 +79,12 @@ InpEntryMaxPullbackEMA_ATR=1.80
 InpEntryMinBody_ATR=0.30
 InpEntryRequireBodyDirection=true
 ; === 高级风控（默认关闭） ===
-InpEnableFastLoss=false
+InpEnableFastLoss=true
 InpFastLossDistance=800
 InpFastLossTime=300
 InpFastLossRecoveryDistance=500
 InpFastLossExitMaxLoss=300.0
 InpHedgeMode=2
-InpHedgeTriggerMode=0
-InpHedgeLossPercent=30.0
 InpHedgeAbsoluteUSD=10000.0
 InpHedgeRatio=0.6
 InpHedgeLadderLoss1=2000.0

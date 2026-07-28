@@ -1,7 +1,7 @@
 # AGENTS.md — 金貔貅 EA 项目上下文
 
 > 本文件供 Codex / Claude / Qoder 等 AI 编程助手快速理解项目背景。
-> 最后更新：2026-07-28，对应版本 V1.46（EA 主程序）/ jpx_auth_pay_dashboard（PHP 后台 + 盈亏大屏）。
+> 最后更新：2026-07-28，对应版本 V1.47（EA 主程序）/ jpx_auth_pay_dashboard（PHP 后台 + 盈亏大屏）。
 
 ---
 
@@ -15,7 +15,7 @@
 - **多实例并行**：支持单机同时挂载 20 个 MT5 客户端运行同一 EA，需通过参数随机偏移避免共振爆仓
 
 **配套系统：**
-1. **MT5 EA 主程序**（MQL5）：金貔貅V1.46.mq5
+1. **MT5 EA 主程序**（MQL5）：金貔貅V1.47.mq5
 2. **授权工具**（Python + Tkinter，PyInstaller 打包为 EXE）：金貔貅授权工具.exe
 3. **PHP 后台**（PHP + MySQL）：授权码生成、管理后台
 
@@ -107,12 +107,12 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 
 **V1.22 重构**：原 `InpEnableHedge`(总开关) + `InpUseHedgeLadder`(算法选择) 两个 bool 合并为单一枚举 `InpHedgeMode`：
 - `HEDGE_MODE_OFF`：完全关闭对冲（默认值，保持兼容）
-- `HEDGE_MODE_FIXED`：固定比例（走传统二选一触发：权益% 或 绝对金额）
+- `HEDGE_MODE_FIXED`：固定比例（仅按绝对浮亏美分触发）
 - `HEDGE_MODE_LADDER`：浮亏阶梯对冲（推荐）
 
 **固定模式触发方式（HEDGE_MODE_FIXED 时生效）：**
-- 权益百分比：浮亏达权益的 40% 触发
-- 绝对金额：浮亏达 10000 美分（$100）触发
+- V1.47 起删除权益百分比触发方式，只保留绝对浮亏美分触发。
+- `InpHedgeAbsoluteUSD` 默认 10000 美分（$100）触发固定比例对冲。
 - 注意：变量名 `InpHedgeAbsoluteUSD` 但单位实际是账户本币（美分账户即美分）
 
 **浮亏阶梯对冲（HEDGE_MODE_LADDER 时生效）：**
@@ -156,6 +156,8 @@ EA 综合评分由 **EMA 评分 + SMC 评分** 构成，阈值默认 30 分：
 - 当前采用浮亏阶梯 0.55/0.65/0.75 + 部分减对冲 + 小仓修复的恢复型方案。
 
 ### 4.4 快速熔断（Fast Loss Breaker）
+
+**默认状态**：V1.47 起 `InpEnableFastLoss=true` 默认开启。
 
 **触发条件**：单位时间内价格向不利方向变动达阈值
 - `InpFastLossDistance`：单位**美分**，800 = $8 反向价幅
@@ -255,10 +257,11 @@ ManageHedgeRelease();     // 对冲止盈
 | `InpDeepTPMinProfit` | 30 美分 | 守护 TP 最低目标 |
 | `InpHedgeMode` | HEDGE_MODE_OFF | 对冲模式（OFF/FIXED/LADDER），V1.22 新增 |
 | `InpHedgeRatio` | 0.5 | [固定模式]对冲手数比例 |
-| `InpHedgeLadderLoss1/2/3` | 1800 / 2600 / 3800 | 阶梯对冲浮亏阈值（美分） |
-| `InpHedgeLadderRatio1/2/3` | 0.6 / 0.7 / 0.8 | 阶梯目标对冲比例 |
+| `InpHedgeLadderLoss1/2/3` | 2000 / 3000 / 4500 | 阶梯对冲浮亏阈值（美分） |
+| `InpHedgeLadderRatio1/2/3` | 0.55 / 0.65 / 0.75 | 阶梯目标对冲比例 |
 | `InpHedgeAbsoluteUSD` | 10000 美分 | 对冲触发浮亏（黄金建议 5000）|
 | `InpHedgeReleaseFixed` | 200 美分 | 对冲解锁阈值（黄金建议 300~500）|
+| `InpEnableFastLoss` | true | 启用快速亏损紧急停止 |
 | `InpFastLossDistance` | 800 美分 | 5min 内反向 $8 |
 | `InpFastLossTime` | 300 秒 | 熔断窗口 |
 | `InpFastLossRecoveryDistance` | 500 美分 | 熔断后极值回撤解锁 |
@@ -593,6 +596,15 @@ jpx_auth_pay_dashboard/
 - 入场信息拆分为摘要、未建仓原因、精确过滤阈值三部分，明确显示 EMA 多空当前分/达标分、H4 是否顺向、RSI/距慢EMA/实体强度的当前值和阈值。
 - 对冲关闭时不再显示比例、权益百分比、绝对金额等未生效参数，避免误解为轮转或对冲残留。
 - 本地授权版与远程授权版同步更新到 V1.46 / V1.46R，远程上报版本号同步为 `1.46R`。
+
+### 2026-07-28（EA V1.47）
+
+**修改**
+- 删除固定对冲的权益百分比触发方式，移除 `InpHedgeTriggerMode` / `InpHedgeLossPercent` 参数；固定对冲现在只按 `InpHedgeAbsoluteUSD` 绝对浮亏美分触发。
+- 快速亏损紧急停止默认开启：`DEF_ENABLE_FAST_LOSS=true`，参数文件同步 `InpEnableFastLoss=true`。
+- 点差默认从 450 点统一为 350 点，和实盘 `.set` 参数保持一致。
+- `DEF_MART_MAX_TOTAL_LOTS` 从 2.0 同步为 10.0，避免未加载 `.set` 时总手数默认值过低。
+- 本地授权版与远程授权版同步更新到 V1.47 / V1.47R，远程上报版本号同步为 `1.47R`。
 
 ### 2026-05-24（Web 大屏 + 续费记录页）
 
